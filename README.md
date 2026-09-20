@@ -2,7 +2,7 @@
 
 A gradient-boosting regression model that predicts one-year disease progression from routine clinical measurements — served as a single self-contained HTML page that runs inference in the browser, with no backend.
 
-**Live demo:** _add your deployed URL here_
+**Live demo:** https://vishnuvarthant1126-bit.github.io/progression-estimator/
 
 ## What it does
 
