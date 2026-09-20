@@ -1,0 +1,943 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Gradient-boosting regression model predicting one-year disease progression from clinical measurements, running inference in the browser.">
+<style>
+:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}
+img{max-width:100%}
+[hidden]:not([hidden=until-found i]){display:none!important}
+</style>
+<title>Progression Estimator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#f5f6f1;
+    --surface:#ffffff;
+    --surface-2:#edf1ea;
+    --border:#d9ddd2;
+    --border-strong:#c3c9ba;
+    --ink:#182420;
+    --muted:#5b6b62;
+    --muted-2:#7c8a81;
+    --accent:#2f6f63;
+    --accent-strong:#1e4f46;
+    --accent-soft:#dcece5;
+    --warn:#a6631f;
+    --warn-soft:#f1e3cf;
+    --shadow: 0 1px 2px rgba(24,36,32,0.04), 0 8px 24px -12px rgba(24,36,32,0.18);
+    --shadow-hover: 0 4px 10px -2px rgba(24,36,32,0.10), 0 22px 44px -18px rgba(24,36,32,0.24);
+
+    /* Clinical status semantics — deliberately a different hue family from
+       --accent (teal) so "this is the product's color" and "this reading is
+       in the healthy zone" never get visually conflated. */
+    --zone-green:#2f8f4e;      --zone-green-soft:#dcefe0;
+    --zone-amber:#b5790f;      --zone-amber-soft:#f4e6c9;
+    --zone-red:#b8493a;        --zone-red-soft:#f5ddd8;
+    --zone-neutral:#6b7a90;    --zone-neutral-soft:#e4e8ee;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f1613;
+      --surface:#161f1b;
+      --surface-2:#1b2521;
+      --border:#2a3630;
+      --border-strong:#3a4a42;
+      --ink:#eaf1ec;
+      --muted:#9aa89f;
+      --muted-2:#7f8d84;
+      --accent:#63d0bb;
+      --accent-strong:#8fe2cf;
+      --accent-soft:#1d3530;
+      --warn:#e2ac68;
+      --warn-soft:#3a2f1c;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px -16px rgba(0,0,0,0.6);
+      --shadow-hover: 0 4px 10px -2px rgba(0,0,0,0.4), 0 24px 52px -20px rgba(0,0,0,0.7);
+      --zone-green:#5fcf82;   --zone-green-soft:#1c3325;
+      --zone-amber:#e3ac52;   --zone-amber-soft:#3a2e17;
+      --zone-red:#e37c6c;     --zone-red-soft:#3a2320;
+      --zone-neutral:#98a7bb; --zone-neutral-soft:#242c36;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1613;
+    --surface:#161f1b;
+    --surface-2:#1b2521;
+    --border:#2a3630;
+    --border-strong:#3a4a42;
+    --ink:#eaf1ec;
+    --muted:#9aa89f;
+    --muted-2:#7f8d84;
+    --accent:#63d0bb;
+    --accent-strong:#8fe2cf;
+    --accent-soft:#1d3530;
+    --warn:#e2ac68;
+    --warn-soft:#3a2f1c;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px -16px rgba(0,0,0,0.6);
+    --shadow-hover: 0 4px 10px -2px rgba(0,0,0,0.4), 0 24px 52px -20px rgba(0,0,0,0.7);
+    --zone-green:#5fcf82;   --zone-green-soft:#1c3325;
+    --zone-amber:#e3ac52;   --zone-amber-soft:#3a2e17;
+    --zone-red:#e37c6c;     --zone-red-soft:#3a2320;
+    --zone-neutral:#98a7bb; --zone-neutral-soft:#242c36;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent-soft); }
+
+  .mono{ font-family:"IBM Plex Mono", ui-monospace, "SF Mono", monospace; font-variant-numeric: tabular-nums; }
+
+  .wrap{ max-width:1180px; margin:0 auto; padding:32px 24px 64px; }
+
+  /* ---------- Header ---------- */
+  header.top{
+    display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between;
+    gap:16px 32px; padding-bottom:22px; margin-bottom:28px;
+    border-bottom:1px solid var(--border);
+  }
+  .eyebrow{
+    font-family:"IBM Plex Mono", monospace; font-size:11.5px; letter-spacing:.11em; text-transform:uppercase;
+    color:var(--accent-strong); margin:0 0 8px;
+  }
+  h1{
+    font-family:"Fraunces", Georgia, serif; font-optical-sizing:auto;
+    font-weight:600; font-size:clamp(28px,3.6vw,40px); line-height:1.08; margin:0 0 8px;
+    text-wrap:balance; letter-spacing:-0.01em;
+  }
+  .lede{ margin:0; color:var(--muted); font-size:14.5px; line-height:1.55; max-width:56ch; }
+  .lede b{ color:var(--ink); font-weight:600; }
+
+  .chiprow{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 11px; border-radius:100px; border:1px solid var(--border-strong);
+    background:var(--surface); font-size:12px; color:var(--muted); white-space:nowrap;
+  }
+  .chip b{ color:var(--ink); font-weight:600; font-family:"IBM Plex Mono",monospace; }
+  .chip.accent{ border-color:transparent; background:var(--accent-soft); color:var(--accent-strong); }
+  .chip .dot{ width:6px; height:6px; border-radius:50%; background:var(--accent); flex:none; }
+
+  .header-right{ display:flex; flex-direction:column; align-items:flex-end; gap:12px; }
+  .header-top-row{ display:flex; align-items:center; gap:14px; }
+
+  .header-spark{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+  .header-spark .cap{
+    font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted-2);
+    font-family:"IBM Plex Mono",monospace;
+  }
+  .header-spark svg{ display:block; overflow:visible; }
+
+  .theme-toggle{
+    display:inline-flex; gap:2px; padding:3px; border-radius:100px;
+    border:1px solid var(--border-strong); background:var(--surface-2);
+  }
+  .theme-toggle button{
+    appearance:none; -webkit-appearance:none; border:none; background:transparent;
+    color:var(--muted-2); padding:5px 10px; border-radius:100px; cursor:pointer;
+    font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.04em; text-transform:uppercase;
+  }
+  .theme-toggle button.active{ background:var(--accent); color:var(--surface); font-weight:600; }
+  .theme-toggle button:hover:not(.active){ color:var(--ink); }
+  .theme-toggle button:focus-visible{ outline:2px solid var(--accent-strong); outline-offset:1px; }
+
+  @media (max-width:640px){
+    header.top{ align-items:flex-start; }
+    .header-right{ width:100%; align-items:flex-start; }
+    .header-top-row{ width:100%; justify-content:space-between; }
+  }
+
+  /* ---------- Layout ---------- */
+  .grid{ display:grid; grid-template-columns: 1.35fr 1fr; gap:22px; align-items:start; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+  .grid > *{ min-width:0; }
+  @media (min-width:901px){ .rail{ position:sticky; top:20px; } }
+
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    box-shadow:var(--shadow);
+  }
+  .panel:hover{ box-shadow:var(--shadow-hover); }
+  @media (prefers-reduced-motion:no-preference){
+    .panel{ transition: box-shadow .18s ease, transform .18s ease; animation: panelIn .45s ease-out backwards; }
+    .panel:hover{ transform:translateY(-1px); }
+    .grid > section.panel{ animation-delay:.02s; }
+    .rail .panel:nth-child(1){ animation-delay:.08s; }
+    .rail .panel:nth-child(2){ animation-delay:.14s; }
+    .rail .panel:nth-child(3){ animation-delay:.2s; }
+    @keyframes panelIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+  }
+  .panel-head{
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+    padding:18px 20px 14px; border-bottom:1px solid var(--border);
+  }
+  .panel-head h2{ font-family:"Fraunces",serif; font-weight:600; font-size:17px; margin:0; }
+  .panel-head .sub{ font-size:11.5px; color:var(--muted-2); font-family:"IBM Plex Mono",monospace; }
+  .panel-body{ padding:18px 20px 22px; }
+
+  .group-label{
+    font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted-2);
+    margin:18px 0 10px; font-family:"IBM Plex Mono",monospace;
+  }
+  .group-label:first-child{ margin-top:2px; }
+
+  /* ---------- Measurement rows (lab reference-range styling) ---------- */
+  .measure-row{ padding:10px 0; border-bottom:1px dashed var(--border); }
+  .measure-row:last-child{ border-bottom:none; }
+  .measure-head{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:8px; }
+  .measure-name{ font-size:13.5px; font-weight:500; }
+  .measure-code{ color:var(--muted-2); font-size:11px; margin-left:6px; }
+  .measure-value{ font-size:13px; color:var(--ink); font-weight:600; display:flex; align-items:center; gap:8px; }
+  .measure-value .num{ font-variant-numeric:tabular-nums; }
+
+  .status-pill{
+    font-size:10.5px; font-weight:600; padding:2px 9px; border-radius:100px;
+    letter-spacing:.01em; white-space:nowrap; font-family:"IBM Plex Sans",sans-serif;
+  }
+  .status-pill.zone-green{ background:var(--zone-green-soft); color:var(--zone-green); }
+  .status-pill.zone-amber{ background:var(--zone-amber-soft); color:var(--zone-amber); }
+  .status-pill.zone-red{ background:var(--zone-red-soft); color:var(--zone-red); }
+  .status-pill.zone-neutral{ background:var(--zone-neutral-soft); color:var(--zone-neutral); }
+
+  .metric-note{ font-size:11px; color:var(--muted-2); line-height:1.45; margin:6px 0 0; }
+  .metric-note .aside{ font-style:italic; }
+
+  /* Clinical legend */
+  .clinic-legend{ display:flex; flex-wrap:wrap; gap:14px; margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+  .clinic-legend .item{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--muted); }
+  .clinic-legend .swatch{ width:11px; height:11px; border-radius:3px; flex:none; }
+  .clinic-legend .swatch.g{ background:var(--zone-green); }
+  .clinic-legend .swatch.a{ background:var(--zone-amber); }
+  .clinic-legend .swatch.r{ background:var(--zone-red); }
+
+  .disclaimer-box{
+    margin-top:18px; padding:12px 14px; border-radius:10px;
+    background:var(--surface-2); border:1px dashed var(--border-strong);
+    font-size:11.5px; color:var(--muted); line-height:1.55;
+  }
+  .disclaimer-box b{ color:var(--ink); }
+
+  .range-wrap{ position:relative; height:26px; display:flex; align-items:center; }
+  .range-track{
+    position:absolute; left:0; right:0; height:6px; border-radius:4px;
+    background:var(--surface-2); border:1px solid var(--border);
+    overflow:visible;
+  }
+  .range-fill{
+    position:absolute; top:-1px; bottom:-1px; background:var(--accent-soft);
+    border-radius:4px;
+  }
+  .range-track.has-zones{ background:none; border-color:var(--border-strong); }
+  .range-track .zone-boundary{
+    position:absolute; top:-1px; bottom:-1px; width:1px; background:rgba(0,0,0,0.18);
+  }
+  :root:not([data-theme="light"]) .range-track .zone-boundary{ background:rgba(0,0,0,0.35); }
+  .range-mean-tick{
+    position:absolute; top:-5px; width:2px; height:16px; background:var(--muted-2); opacity:.55;
+    transform:translateX(-1px);
+  }
+  .range-ticklabels{
+    position:relative; height:14px; margin-top:1px;
+  }
+  .range-ticklabels span{
+    position:absolute; transform:translateX(-50%); font-size:10px; color:var(--muted-2);
+    font-family:"IBM Plex Mono",monospace; white-space:nowrap;
+  }
+  .range-ticklabels span:first-child{ transform:translateX(0); }
+  .range-ticklabels span:last-child{ transform:translateX(-100%); }
+  input[type=range].range-input{
+    -webkit-appearance:none; appearance:none; position:relative; width:100%; height:26px;
+    background:transparent; margin:0; cursor:pointer; z-index:2;
+  }
+  input[type=range].range-input::-webkit-slider-runnable-track{ height:26px; background:transparent; }
+  input[type=range].range-input::-moz-range-track{ height:26px; background:transparent; }
+  input[type=range].range-input::-webkit-slider-thumb{
+    -webkit-appearance:none; width:16px; height:16px; margin-top:5px; border-radius:50%;
+    background:var(--surface); border:3px solid var(--ink); box-shadow:0 1px 3px rgba(0,0,0,0.35);
+  }
+  input[type=range].range-input::-moz-range-thumb{
+    width:16px; height:16px; border-radius:50%; background:var(--surface); border:3px solid var(--ink);
+    box-shadow:0 1px 3px rgba(0,0,0,0.35);
+  }
+  input[type=range].range-input:focus-visible::-webkit-slider-thumb{ outline:2px solid var(--accent-strong); outline-offset:2px; }
+
+  .toggle-row .range-wrap{ display:none; }
+  .segtoggle{ display:flex; gap:8px; }
+  .segtoggle button{
+    flex:1; padding:8px 10px; border-radius:8px; border:1px solid var(--border-strong);
+    background:var(--surface-2); color:var(--muted); font:inherit; font-size:12.5px; cursor:pointer;
+    font-family:"IBM Plex Mono",monospace;
+  }
+  .segtoggle button.active{ background:var(--accent); border-color:var(--accent); color:var(--surface); font-weight:600; }
+
+  .footnote{
+    font-size:11.5px; color:var(--muted-2); margin-top:16px; line-height:1.5; padding-top:14px; border-top:1px solid var(--border);
+  }
+
+  /* ---------- Estimate panel ---------- */
+  .estimate-hero{ text-align:left; padding-bottom:6px; }
+  .estimate-label{ font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .estimate-value{ font-family:"Fraunces",serif; font-weight:600; font-size:56px; line-height:1; letter-spacing:-0.01em; color:var(--ink); }
+  .estimate-unit{ font-size:13px; color:var(--muted); margin-top:6px; max-width:40ch; line-height:1.5; }
+
+  .gauge{ margin:18px 0 4px; }
+  .gauge-track{ position:relative; height:8px; border-radius:5px; background:var(--surface-2); border:1px solid var(--border); }
+  .gauge-fill{ position:absolute; inset:0; border-radius:5px; background:linear-gradient(90deg, var(--accent-soft), var(--accent)); width:0%; }
+  .gauge-marker{ position:absolute; top:-6px; width:3px; height:20px; background:var(--ink); border-radius:2px; left:0%; }
+  .gauge-marker::after{
+    content: attr(data-val); position:absolute; top:-21px; left:50%; transform:translateX(-50%);
+    font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:600; color:var(--ink); white-space:nowrap;
+  }
+  .gauge-scale{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--muted-2); margin-top:6px; font-family:"IBM Plex Mono",monospace; }
+
+  .statgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:18px; }
+  .stat{ background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+  .stat .k{ font-size:10.5px; color:var(--muted-2); text-transform:uppercase; letter-spacing:.07em; margin-bottom:4px; }
+  .stat .v{ font-family:"IBM Plex Mono",monospace; font-size:16px; font-weight:600; }
+
+  .compare-line{ display:flex; align-items:center; gap:10px; margin-top:16px; font-size:12.5px; color:var(--muted); }
+  .compare-line .swatch{ width:10px; height:10px; border-radius:3px; flex:none; }
+
+  /* Examples strip */
+  .examples-panel{ margin-top:22px; }
+  .example-scroller{ display:flex; gap:8px; overflow-x:auto; padding:2px 2px 6px; }
+  .example-chip{
+    flex:none; display:flex; flex-direction:column; gap:3px; min-width:108px;
+    padding:9px 12px; border-radius:10px; border:1px solid var(--border-strong);
+    background:var(--surface-2); cursor:pointer; text-align:left; font:inherit;
+  }
+  .example-chip:hover{ border-color:var(--accent); }
+  .example-chip.active{ background:var(--accent-soft); border-color:var(--accent); }
+  .example-chip .id{ font-size:11px; color:var(--muted-2); font-family:"IBM Plex Mono",monospace; }
+  .example-chip .vals{ font-family:"IBM Plex Mono",monospace; font-size:12px; }
+  .example-chip .vals .a{ color:var(--muted); }
+  .example-chip .vals .p{ color:var(--accent-strong); font-weight:600; }
+
+  /* Version history */
+  .history-panel{ margin-top:22px; }
+  .vlist{ display:flex; flex-direction:column; gap:9px; }
+  .vrow{
+    display:grid; grid-template-columns: 30px 74px 1fr auto auto; gap:12px; align-items:center;
+    padding:8px 10px; border-radius:9px;
+  }
+  @media (prefers-reduced-motion:no-preference){ .vrow{ transition: background-color .15s ease; } }
+  .vrow:not(.champ):not(.flagged):hover{ background:var(--surface-2); }
+  .vrow.champ{ background:var(--accent-soft); }
+  .vrow.flagged{ background:var(--warn-soft); }
+  .vrow .vid{ font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--muted-2); }
+  .vrow .vname{ font-size:13px; }
+  .vrow .vbar-wrap{
+    position:relative; height:7px; border-radius:4px; overflow:hidden;
+    background:var(--surface-2); border:1px solid var(--border);
+  }
+  .vrow.champ .vbar-wrap, .vrow.flagged .vbar-wrap{ background:rgba(255,255,255,0.35); border-color:transparent; }
+  :root:not([data-theme="light"]) .vrow.champ .vbar-wrap,
+  :root:not([data-theme="light"]) .vrow.flagged .vbar-wrap{ background:rgba(0,0,0,0.22); }
+  .vrow .vbar{ position:absolute; top:0; bottom:0; left:0; border-radius:4px; background:var(--muted-2); }
+  .vrow.champ .vbar{ background:var(--accent-strong); }
+  .vrow.flagged .vbar{ background:var(--warn); }
+  .vrow .vmetric{ font-family:"IBM Plex Mono",monospace; font-size:12px; text-align:right; min-width:64px; }
+  .vrow .tag{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; padding:2px 7px; border-radius:100px; font-family:"IBM Plex Mono",monospace; white-space:nowrap; }
+  .vrow.champ .tag{ background:var(--accent); color:var(--surface); }
+  .vrow.flagged .tag{ background:var(--warn); color:var(--surface); }
+
+  a.textlink{ color:var(--accent-strong); text-decoration-color: var(--border-strong); text-underline-offset:2px; }
+
+  @media (prefers-reduced-motion:no-preference){
+    .range-fill, .gauge-fill, .gauge-marker{ transition: all .12s ease-out; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <p class="eyebrow">Model Regression System &middot; live inference</p>
+      <h1>Progression Estimator</h1>
+      <p class="lede">Adjust a patient's measurements and watch <b id="modelNameLede">the champion model</b> predict disease progression in real time &mdash; the exact gradient-boosting ensemble trained in the pipeline, re-executed tree-by-tree in this page.</p>
+    </div>
+    <div class="header-right">
+      <div class="header-top-row">
+        <div class="header-spark">
+          <span class="cap">RMSE by version</span>
+          <svg id="headerSparkSvg" width="128" height="34" viewBox="0 0 128 34"></svg>
+        </div>
+        <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme">
+          <button type="button" data-theme-choice="light">Light</button>
+          <button type="button" data-theme-choice="system">Auto</button>
+          <button type="button" data-theme-choice="dark">Dark</button>
+        </div>
+      </div>
+      <div class="chiprow" id="headerChips"></div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT: patient measurements -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Patient measurements</h2>
+        <span class="sub" id="dataHashSub"></span>
+      </div>
+      <div class="panel-body">
+        <div class="clinic-legend">
+          <span class="item"><span class="swatch g"></span>Healthy / desirable</span>
+          <span class="item"><span class="swatch a"></span>Borderline / elevated</span>
+          <span class="item"><span class="swatch r"></span>Higher risk</span>
+        </div>
+
+        <div class="group-label">Demographics</div>
+        <div id="groupDemo"></div>
+
+        <div class="group-label">Vitals</div>
+        <div id="groupVitals"></div>
+
+        <div class="group-label">Lipid panel</div>
+        <div id="groupLipids"></div>
+
+        <div class="group-label">Metabolic</div>
+        <div id="groupMetabolic"></div>
+
+        <p class="footnote">
+          These are general <b>screening reference ranges</b> for adults &mdash; not personalized treatment targets. A clinician may set a different individual goal based on your full history. Values convert under the hood into the inputs the model was actually trained on, so the prediction always reflects what's shown here.
+        </p>
+        <div class="disclaimer-box">
+          <b>Reference ranges are general adult guidelines</b> and may vary based on age, sex, medical history, fasting status, and individual cardiovascular risk.
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: estimate -->
+    <div class="rail">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Estimated progression</h2>
+          <span class="sub">raw model output</span>
+        </div>
+        <div class="panel-body">
+          <div class="estimate-hero">
+            <div class="estimate-label">Predicted one-year progression score</div>
+            <div class="estimate-value mono" id="predValue">&mdash;</div>
+            <div class="estimate-unit" id="predContext"></div>
+          </div>
+
+          <div class="gauge">
+            <div class="gauge-track">
+              <div class="gauge-fill" id="gaugeFill"></div>
+              <div class="gauge-marker" id="gaugeMarker"></div>
+            </div>
+            <div class="gauge-scale">
+              <span id="gaugeMin">&ndash;</span>
+              <span>population range of the target</span>
+              <span id="gaugeMax">&ndash;</span>
+            </div>
+          </div>
+
+          <div class="statgrid" id="statGrid"></div>
+
+          <div class="compare-line" id="compareLine" style="display:none;">
+            <span class="swatch" style="background:var(--accent);"></span>
+            <span id="compareText"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel examples-panel">
+        <div class="panel-head">
+          <h2>Try a real patient</h2>
+          <span class="sub" id="exampleSub"></span>
+        </div>
+        <div class="panel-body">
+          <div class="example-scroller" id="exampleScroller"></div>
+        </div>
+      </section>
+
+      <section class="panel history-panel">
+        <div class="panel-head">
+          <h2>Version history</h2>
+          <span class="sub">from the model registry</span>
+        </div>
+        <div class="panel-body">
+          <div class="vlist" id="versionList"></div>
+          <p class="footnote">Every version was trained &amp; scored by the pipeline; the regression-detection test suite blocked <span id="flaggedName">a candidate</span> from replacing the champion. See the full report for methodology.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script id="payload-data" type="application/json">{"champion_version":"v4","model_type":"gradient_boosting","metrics":{"rmse":53.046531777702995,"mae":43.360250389895974,"r2":0.46888374149896506,"mape":39.229463495810094},"learning_rate":0.05,"init_value":153.73654390934846,"trees":[{"feature":[2,8,8,-2,-2,7,-2,-2,2,9,-2,-2,5,-2,-2],"threshold":[0.0715004913508892,0.1044938936829567,-0.9315943121910095,-2.0,-2.0,1.8709098100662231,-2.0,-2.0,1.5098536610603333,0.6673162579536438,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-3.429928673470852e-14,-35.693481708391374,-53.17733338303251,-72.85899288894021,-43.814213812260974,10.930122757318196,5.837530164725617,102.59678942398489,51.80512275731835,37.36515100590584,22.063456090651524,76.77860760580309,117.34037916757468,137.4856783128738,72.01345609065153]},{"feature":[2,8,8,-2,-2,0,-2,-2,2,9,-2,-2,5,-2,-2],"threshold":[0.0715004913508892,0.1044938936829567,-0.9315943121910095,-2.0,-2.0,1.3806000351905823,-2.0,-2.0,1.5098536610603333,0.6673162579536438,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-4.267282152440262e-15,-33.908807622971956,-50.51846671388107,-69.21604324449333,-41.623503121648035,10.383616619452315,4.619203621548751,86.76208884167454,49.21486661945229,35.49689345561049,20.960283286119,72.93967722551288,111.47336020919592,130.61139439723007,68.41278328611898]},{"feature":[2,8,7,-2,-2,4,-2,-2,2,8,-2,-2,5,-2,-2],"threshold":[0.0715004913508892,0.4351603388786316,0.6491779088973999,-2.0,-2.0,1.5791066884994507,-2.0,-2.0,1.5098536610603333,1.3076807856559753,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-4.267282152440262e-15,-32.21336724182345,-44.27357096196327,-49.874172554473446,-7.991412819179766,23.850282484232064,38.746108678940914,-39.98897263594879,46.75412328847965,33.72204878282991,23.173866122750205,82.4446067841507,105.89969219873613,124.08082467736861,64.99214412181301]},{"feature":[2,8,5,-2,-2,7,-2,-2,2,3,-2,-2,5,-2,-2],"threshold":[0.16282450407743454,-0.08531724289059639,2.385815143585205,-2.0,-2.0,2.087419271469116,-2.0,-2.0,1.5098536610603333,0.3208412230014801,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-9.500741395999074e-15,-28.691398743045973,-48.50556982406758,-49.61021100089643,103.93491257830598,5.310697309571486,0.7712666823429586,92.69473688372067,47.45945656744448,34.54565725384422,11.551163511241437,58.866756404674106,100.6047075887993,117.87678344350012,61.74253691572238]},{"feature":[8,2,5,-2,-2,3,-2,-2,2,2,-2,-2,5,-2,-2],"threshold":[-0.029013285413384438,0.09433149546384811,2.385815143585205,-2.0,-2.0,-0.6394577920436859,-2.0,-2.0,1.1445575952529907,-0.5106900781393051,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.3526479275659698e-14,-34.1855751858999,-45.6913406326167,-46.71566338142527,98.73816694939069,7.707211825222899,-26.858029398966583,27.063746910768995,35.974355282836484,20.23348125516311,-14.914280403307275,29.69634016321283,87.91923957415877,104.35780251668206,53.77760884737961]},{"feature":[2,8,6,-2,-2,7,-2,-2,2,8,-2,-2,0,-2,-2],"threshold":[0.16282450407743454,-0.08531724289059639,0.4686724990606308,-2.0,-2.0,2.087419271469116,-2.0,-2.0,1.5098536610603333,0.14705586433410645,-2.0,-2.0,-1.2102351784706116,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.1755154608609022e-14,-26.011342402307797,-43.83051207552173,-33.11405754003761,-57.53351951433726,4.567232715923477,0.30707945278318893,86.57518303137401,43.02628066547143,31.239171262748364,-0.2653222692057942,47.21328065923213,91.53476936129339,26.437194758411305,100.02575735297368]},{"feature":[2,8,8,-2,-2,3,-2,-2,2,9,-2,-2,5,-2,-2],"threshold":[0.0715004913508892,0.4351603388786316,-0.7349122166633606,-2.0,-2.0,-0.6867614090442657,-2.0,-2.0,1.5098536610603333,0.6673162579536438,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.1916184123795448e-14,-26.387380679144606,-36.6070026621103,-50.870193546662065,-25.83683811663244,21.12005124166879,-31.04563386756729,37.88759288392326,38.29835112459184,27.57672676879048,14.82185423960282,60.43018631366782,86.95803089322877,102.39759037174896,52.21902206655828]},{"feature":[8,2,0,-2,-2,0,-2,-2,2,3,-2,-2,5,-2,-2],"threshold":[-0.029013285413384438,0.09433149546384811,0.5954984426498413,-2.0,-2.0,-1.7598062753677368,-2.0,-2.0,1.1445575952529907,0.3208412230014801,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.2721331699727573e-14,-29.634041053167685,-39.355605189654504,-46.15240279347813,-18.576823943679244,5.762423238656116,114.29500369605512,-0.10420273201409784,31.184659480368257,17.471819721249087,1.1488080270627914,35.349403957738865,76.43703068546155,91.2546411435243,45.66199358025421]},{"feature":[2,8,5,-2,-2,7,-2,-2,3,9,-2,-2,8,-2,-2],"threshold":[0.16282450407743454,-0.08531724289059639,2.385815143585205,-2.0,-2.0,2.087419271469116,-2.0,-2.0,0.3208412230014801,0.8387904465198517,-2.0,-2.0,-0.9250096380710602,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.296287597250721e-14,-22.521347834968868,-37.75767087217999,-38.73908620155767,97.67764458193864,3.624934907899634,-0.3284664303415864,79.7279106690431,37.25335732100114,14.673736150512811,1.764136679058886,59.85733430060156,57.575016374440615,-79.56556581201579,61.60856290933634]},{"feature":[8,2,0,-2,-2,0,-2,-2,2,2,-2,-2,5,-2,-2],"threshold":[-0.029013285413384438,0.09433149546384811,0.5954984426498413,-2.0,-2.0,-1.7598062753677368,-2.0,-2.0,1.1445575952529907,-0.5106900781393051,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.4170597336405397e-14,-26.873551205902007,-35.56652901081203,-41.92577723146993,-16.125398736229336,4.777803878642243,108.49204667729941,-0.8283714077716534,28.27972539690844,15.614880673073758,-14.663153883018465,23.766659207406267,70.073712985563,84.0612590189157,41.022655839368944]},{"feature":[2,7,8,-2,-2,3,-2,-2,3,9,-2,-2,8,-2,-2],"threshold":[0.16282450407743454,0.6337129473686218,0.5407063961029053,-2.0,-2.0,-0.5327578783035278,-2.0,-2.0,0.3208412230014801,0.8387904465198517,-2.0,-2.0,-0.9250096380710602,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-7.246328183389124e-15,-20.413036686602283,-30.52990900103661,-34.64151895182458,18.493132719896863,12.27224309849326,-17.707976838457846,28.144124241585022,33.765925346259394,12.630469792183677,0.5427994141611666,54.93731611526247,52.787835344927515,-75.54586895102642,56.56235605951441]},{"feature":[8,2,5,-2,-2,0,-2,-2,2,4,-2,-2,3,-2,-2],"threshold":[-0.04752678982913494,0.09433149546384811,2.385815143585205,-2.0,-2.0,-1.7598062753677368,-2.0,-2.0,0.3454725295305252,1.6656118631362915,-2.0,-2.0,0.3208412230014801,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.1594125093422597e-14,-25.122813392648343,-32.75370891395746,-33.66572741754529,92.19282607757393,2.5893861321057385,103.04030437272638,-2.9912204368176316,24.98087659381984,5.142204561032375,9.440795974122226,-42.14230098295598,48.49337678082717,22.24169414299212,65.63733278920928]},{"feature":[8,2,5,-2,-2,3,-2,-2,2,3,-2,-2,4,-2,-2],"threshold":[-0.029013285413384438,0.09433149546384811,0.9637205302715302,-2.0,-2.0,-0.6394577920436859,-2.0,-2.0,1.1445575952529907,0.3208412230014801,-2.0,-2.0,-0.5402690917253494,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-7.206070804592517e-15,-23.205644744310895,-30.60207561944927,-33.468815350329194,7.238888828165715,3.7249497241416702,-25.93736894464263,20.33584817866088,24.419893597210866,13.115662326572803,-0.6369997496091462,28.1781017433435,61.72385679031648,99.7892151134527,52.20751720953243]},{"feature":[2,7,8,-2,-2,3,-2,-2,2,3,-2,-2,0,-2,-2],"threshold":[0.16282450407743454,0.6337129473686218,0.5407063961029053,-2.0,-2.0,-0.5327578783035278,-2.0,-2.0,1.5098536610603333,0.3208412230014801,-2.0,-2.0,-1.2102351784706116,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-8.816365956456767e-15,-17.669561633590316,-26.60400369385995,-30.251332107500183,16.883373545696642,11.19555886881928,-16.42589061107795,25.81867918170605,29.227846311202,20.28880060637446,3.4900712751947127,38.056687398968414,66.01545748106925,11.776550183898356,73.09009756330893]},{"feature":[8,5,3,-2,-2,0,-2,-2,2,7,-2,-2,3,-2,-2],"threshold":[-0.04752678982913494,0.39422430098056793,0.46310776472091675,-2.0,-2.0,-1.2887453436851501,-2.0,-2.0,0.3454725295305252,2.087419271469116,-2.0,-2.0,0.46310776472091675,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-4.951657591982568e-15,-21.75990926922793,-27.68364057483655,-32.107944102908945,1.1907613978465075,3.9095930550760563,76.80593583042265,-6.145074913937267,21.636971928723824,4.147335281189771,1.2539813953499066,70.69447465550662,42.36543017765309,20.733427516374963,58.8245626373212]},{"feature":[2,6,8,-2,-2,8,-2,-2,2,8,-2,-2,0,-2,-2],"threshold":[0.16282450407743454,-0.3934096097946167,-0.9169934689998627,-2.0,-2.0,0.48526133596897125,-2.0,-2.0,1.5098536610603333,0.640622079372406,-2.0,-2.0,-1.2102351784706116,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-3.0595607885420744e-15,-16.074740256040485,7.589977928853581,-46.16911105558012,12.305687488891623,-25.360895493150828,-29.72360229011677,8.571268483251009,26.58979591224739,18.335190940623864,3.1388551836056826,34.40823837593155,60.56067021854433,8.581657241634796,67.34054147640208]},{"feature":[8,8,3,-2,-2,5,-2,-2,2,9,-2,-2,4,-2,-2],"threshold":[-0.04752678982913494,-0.7349122166633606,2.277005910873413,-2.0,-2.0,1.9315348267555237,-2.0,-2.0,1.1445575952529907,0.581579178571701,-2.0,-2.0,-0.5402690917253494,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-5.233459243558811e-16,-19.727533616355718,-31.74402337420024,-33.20469931843577,92.41343188582049,-8.245110069970938,-10.459882206644025,89.20486394364498,19.616078624172925,10.064901420422993,0.5974025450217341,30.541119918383856,51.29803227563608,86.37874622952398,42.793616771663274]},{"feature":[2,6,8,-2,-2,0,-2,-2,3,9,-2,-2,8,-2,-2],"threshold":[0.16282450407743454,-0.3150385022163391,-0.9169934689998627,-2.0,-2.0,0.5954984426498413,-2.0,-2.0,0.3208412230014801,2.296320915222168,-2.0,-2.0,-0.9250096380710602,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.0869492275083686e-15,-14.798536027727726,5.930711063013019,-42.980166644412,11.636980128879275,-23.876049459620724,-31.218890700051606,-6.795962226444564,24.478781399248852,8.438351728681592,3.90938837162169,99.01761886987966,38.915168102759374,-73.09488712366644,42.209581491771885]},{"feature":[2,8,6,-2,-2,3,-2,-2,2,9,-2,-2,5,-2,-2],"threshold":[0.0715004913508892,0.4351603388786316,0.4686724990606308,-2.0,-2.0,-0.6867614090442657,-2.0,-2.0,1.5098536610603333,0.7530533671379089,-2.0,-2.0,0.489688977599144,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-3.542649334101349e-15,-15.01024192359937,-21.563688787801325,-13.819512055996816,-33.40772378938473,15.454429985663815,-29.541372087555796,29.917366366341543,21.7856983474463,14.749375942912307,6.156462564383144,39.95525518659782,53.7197769526391,65.13749748929006,28.0299057451744]},{"feature":[8,2,6,-2,-2,6,-2,-2,3,9,-2,-2,2,-2,-2],"threshold":[0.32360216975212097,1.5783466696739197,-0.3934096097946167,-2.0,-2.0,-0.4325951486825943,-2.0,-2.0,1.2694032192230225,0.581579178571701,-2.0,-2.0,1.2016351222991943,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-5.636033031524874e-16,-12.796669410648128,-15.292621385866415,3.2329513099200833,-21.92523383250601,55.84200990785421,87.88896863562367,36.613834671192535,23.3411250050222,14.212481181168187,2.305887224952804,32.07237211549124,59.85570030043822,73.88641955208688,46.90426714507019]},{"feature":[2,7,4,-2,-2,3,-2,-2,3,2,-2,-2,8,-2,-2],"threshold":[0.16282450407743454,0.6337129473686218,-0.8142020106315613,-2.0,-2.0,-0.5327578783035278,-2.0,-2.0,0.3208412230014801,0.6422755718231201,-2.0,-2.0,-0.9250096380710602,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[3.3816198189149245e-15,-12.883650888755696,-19.654876532990432,-4.923894437589766,-27.21943490630432,8.992616577233512,-14.567492065743933,21.465615270574517,21.311302222001906,6.841168744717512,31.70920610058281,-7.4579527349050405,34.33442235155787,-68.65170420407696,37.36342607378243]},{"feature":[8,2,8,-2,-2,6,-2,-2,3,4,-2,-2,2,-2,-2],"threshold":[0.32360216975212097,1.5783466696739197,-0.9315943121910095,-2.0,-2.0,-0.4325951486825943,-2.0,-2.0,1.2694032192230225,1.0312408208847046,-2.0,-2.0,1.2016351222991943,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[6.5619527438468175e-15,-11.740455756622023,-14.0489088875494,-32.01015742724744,-7.915799630091524,51.74200534388098,82.37337188029818,33.36318542203067,21.41459130007858,12.925877703029057,23.52307266693217,-5.117994803076239,55.3694456882767,69.10455582610489,42.69088248412758]},{"feature":[2,8,0,-2,-2,4,-2,-2,9,3,-2,-2,5,-2,-2],"threshold":[0.0715004913508892,0.4351603388786316,0.5954984426498413,-2.0,-2.0,1.5791066884994507,-2.0,-2.0,0.8387904465198517,1.2455735802650452,-2.0,-2.0,3.7453640699386597,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.133641076220131e-15,-12.613172713744541,-18.17613229257643,-23.25024061984449,-2.9538073107722127,13.247071814879355,24.688732794264702,-35.78861809677215,18.306618730365344,10.789058503130986,3.7983368576187058,43.535070421583235,40.859299412068424,44.83735957845439,-98.37280641144045]},{"feature":[8,5,4,-2,-2,0,-2,-2,2,9,-2,-2,4,-2,-2],"threshold":[-0.04752678982913494,0.39422430098056793,-0.6700267791748047,-2.0,-2.0,-1.2887453436851501,-2.0,-2.0,1.1445575952529907,0.581579178571701,-2.0,-2.0,-0.5402690917253494,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-2.818016515762437e-16,-14.50920213541846,-19.28140310648023,-9.917225243415823,-29.903455607866718,6.170335405849183,72.52855063162801,-2.9825218666720295,14.427229241998013,7.100297301875723,-0.7942080055939422,24.174459943612433,38.731198604354894,70.4546942681072,31.040654201021013]},{"feature":[2,6,8,-2,-2,3,-2,-2,3,2,-2,-2,8,-2,-2],"threshold":[0.16282450407743454,-0.3150385022163391,-0.9169934689998627,-2.0,-2.0,2.1703059673309326,-2.0,-2.0,0.3208412230014801,0.6422755718231201,-2.0,-2.0,-0.9250096380710602,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.818016515762437e-16,-10.847951109290808,5.488306540808101,-35.750164268918574,10.299461468609545,-18.00173713907267,-19.151931886214978,68.83796627017159,17.943979278526133,5.362492981105038,29.28884070580882,-8.39515696059964,29.267316946205092,-63.806429283208715,32.00478007059963]},{"feature":[8,6,3,-2,-2,1,-2,-2,3,7,-2,-2,2,-2,-2],"threshold":[0.32360216975212097,0.4686724990606308,0.30910423398017883,-2.0,-2.0,0.05959564447402954,-2.0,-2.0,1.2694032192230225,2.087419271469116,-2.0,-2.0,1.2016351222991943,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-4.83088545559275e-16,-9.826086273014964,-2.0624165499375424,-9.753948756140606,16.81679886528816,-25.35342571916981,-17.752661467711558,-46.63556562325285,17.922781361979293,10.48715862358468,5.9598244059102425,51.23316658265462,47.665272315557694,61.664960834806124,34.74248291317454]},{"feature":[2,6,8,-2,-2,0,-2,-2,2,3,-2,-2,3,-2,-2],"threshold":[0.16282450407743454,-0.3150385022163391,-0.9169934689998627,-2.0,-2.0,0.5954984426498413,-2.0,-2.0,1.5098536610603333,0.3208412230014801,-2.0,-2.0,-0.485454261302948,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.8920968034404933e-15,-9.956142140468353,4.958042888905151,-33.85454072654316,9.486177644040788,-16.487190486664595,-22.653467799311617,-2.143893259420412,16.468806548143156,10.735454403636592,-0.4584793097283187,22.57519198508025,40.06375575822782,79.91331040473239,32.81838218613609]},{"feature":[2,6,2,-2,-2,8,-2,-2,2,2,-2,-2,3,-2,-2],"threshold":[0.16282450407743454,0.4686724990606308,-0.4992745816707611,-2.0,-2.0,1.068436712026596,-2.0,-2.0,1.5098536610603333,0.6651065647602081,-2.0,-2.0,-0.485454261302948,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[3.8647083644742e-15,-9.458335033444941,-2.2321670531421804,-12.324104497080326,10.46414134407033,-22.104128998974762,-23.626137550178896,98.13454654615165,15.645366220736001,10.198681683454767,23.285215722534353,0.7003908486389403,38.06056797031644,75.91764488449576,31.17746307682929]},{"feature":[8,6,8,-2,-2,1,-2,-2,3,7,-2,-2,2,-2,-2],"threshold":[0.32360216975212097,0.4686724990606308,-0.9315943121910095,-2.0,-2.0,0.05959564447402954,-2.0,-2.0,1.2694032192230225,2.087419271469116,-2.0,-2.0,1.2016351222991943,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[4.5893411828131114e-15,-8.71834295865521,-1.8887176451393433,-23.64853736254159,3.9139009461679186,-22.37759358568693,-15.245046784480921,-42.34872462906379,15.902257556587118,9.07156603486922,4.830591563558626,47.24033627666462,43.225023643458705,57.253765597108504,30.275415686243484]},{"feature":[3,9,1,-2,-2,0,-2,-2,4,5,-2,-2,8,-2,-2],"threshold":[0.46310776472091675,2.296320915222168,0.05959564447402954,-2.0,-2.0,-0.3073683737311512,-2.0,-2.0,-0.29517120122909546,-0.37607695162296295,-2.0,-2.0,0.26911139488220215,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[3.3816198189149245e-15,-7.626325439799221,-8.749616508442804,-0.936859543269003,-19.06548978284704,81.86252969547265,117.32779440091576,64.1298973427511,16.626763571454177,46.80501732288155,33.15622796622389,94.57578007118327,6.926610579923953,-18.357449357081208,18.90327055008428]},{"feature":[8,3,4,-2,-2,-2,2,3,-2,-2,4,-2,-2],"threshold":[-0.7349122166633606,2.277005910873413,-0.8142020106315613,-2.0,-2.0,-2.0,1.4185296297073364,0.7476407885551453,-2.0,-2.0,-0.41051138937473297,-2.0,-2.0],"left":[1,2,3,-1,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,5,4,-1,-1,-1,10,9,-1,-1,12,-1,-1],"value":[4.388054288830081e-15,-19.31942403808405,-20.636173663775605,-7.6471814208346744,-31.13791207296187,92.60429414569728,6.222735832491502,2.584809714634806,-3.3105111642570493,19.87775095938425,33.917915310368286,61.37911586067238,24.366193379827724]},{"feature":[2,6,2,-2,-2,2,-2,-2,2,2,-2,-2,3,-2,-2],"threshold":[0.16282450407743454,-0.3150385022163391,-0.2024715468287468,-2.0,-2.0,0.0030074832029640675,-2.0,-2.0,1.5098536610603333,0.6422755718231201,-2.0,-2.0,-0.485454261302948,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[4.227024773643655e-15,-8.173187048815473,4.550737874051511,-3.659856146336362,22.535848585377327,-13.745101884319313,-11.552194873351983,-53.491541458102304,13.519557524356435,8.736723813293574,21.959279038397206,-0.4980766613819763,33.20275779680745,69.72744166305807,26.561906184761877]},{"feature":[8,6,8,-2,-2,1,-2,-2,3,4,-2,-2,2,-2,-2],"threshold":[0.32360216975212097,0.4686724990606308,-0.9315943121910095,-2.0,-2.0,0.05959564447402954,-2.0,-2.0,1.2694032192230225,0.9014831483364105,-2.0,-2.0,1.2016351222991943,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.8920968034404933e-15,-7.568737553787724,-1.5067913821287255,-21.0565722752162,3.7064835226946053,-19.692629897105736,-13.209095840128237,-37.84652525664272,13.80537729810881,7.7725025291416365,17.755597117963998,-7.2021393540919,37.93687637397756,51.924413042871,25.025304064229758]},{"feature":[8,3,8,-2,-2,1,-2,-2,3,0,-2,-2,4,-2,-2],"threshold":[-0.7083825469017029,-0.8172909617424011,-2.127624034881592,-2.0,-2.0,0.05959564447402954,-2.0,-2.0,0.7714704275131226,-1.8383163809776306,-2.0,-2.0,-0.25191862881183624,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-2.8985312733556494e-15,-16.642192033543285,-32.90107219477529,47.407453764446814,-35.57802306008269,-8.099390592895992,5.07057736088902,-26.01054701004361,5.695046703493899,-0.18681873090301884,60.75915944304496,-2.2071273996526775,20.167531390760008,47.21296200283942,11.77412189045951]},{"feature":[8,2,3,-2,-2,6,-2,-2,9,5,-2,-2,6,-2,-2],"threshold":[0.32360216975212097,1.5783466696739197,-0.8172909617424011,-2.0,-2.0,-0.4325951486825943,-2.0,-2.0,0.581579178571701,1.0460176467895508,-2.0,-2.0,-1.2554917335510254,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-8.051475759321249e-16,-7.013746424474847,-8.57422094783741,-19.64374908006458,-3.8301374625972047,35.89930296799582,60.09023335623158,21.384744735054362,12.79307347824212,2.2890085778142373,12.903912759018331,-26.20362896120729,26.161883351513982,54.40409674317728,21.35469809335853]},{"feature":[2,7,0,-2,-2,8,-2,-2,6,5,-2,-2,0,-2,-2],"threshold":[0.16282450407743454,2.087419271469116,0.5954984426498413,-2.0,-2.0,1.543298602104187,-2.0,-2.0,-1.568976104259491,-0.49787674844264984,-2.0,-2.0,-1.8383163809776306,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[6.803497016626455e-15,-7.0047263908055974,-8.05916373498839,-12.715373251688202,2.9993338671736676,49.9348901950649,64.9794811480883,34.89029924204151,11.586765458475435,64.78620336159327,7.49255411560074,83.88408644359076,9.937170484735342,83.68038602585956,8.775860003772754]},{"feature":[3,9,1,-2,-2,9,-2,-2,4,5,-2,-2,2,-2,-2],"threshold":[0.46310776472091675,2.296320915222168,0.05959564447402954,-2.0,-2.0,2.639269232749939,-2.0,-2.0,-0.29517120122909546,-0.37607695162296295,-2.0,-2.0,0.3454725295305252,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[3.703678849287774e-15,-5.959322408368168,-6.961928051225341,0.31300762505380725,-16.567668361652192,73.91492713925284,58.892389995430264,103.96000142689797,12.99239660202793,40.21583225688395,27.311464755113537,85.38111851308032,4.24200657010992,-11.253412464662421,19.01670844047425]},{"feature":[8,3,4,-2,-2,-2,2,0,-2,-2,4,-2,-2],"threshold":[-0.7349122166633606,2.277005910873413,-0.8142020106315613,-2.0,-2.0,-2.0,1.4185296297073364,-1.8383163809776306,-2.0,-2.0,-0.41051138937473297,-2.0,-2.0],"left":[1,2,3,-1,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,5,4,-1,-1,-1,10,9,-1,-1,12,-1,-1],"value":[-2.818016515762437e-16,-15.188881525091576,-16.420548158290874,-4.154614518236347,-26.337685994930702,89.50278229684821,4.892298918194293,1.9744851711871783,57.05034041250616,0.5377237301092908,27.105332605087167,50.65452479318018,18.914309235315685]},{"feature":[8,6,4,-2,-2,3,-2,-2,9,5,-2,-2,6,-2,-2],"threshold":[0.32360216975212097,-0.3150385022163391,-0.4825989902019501,-2.0,-2.0,-0.746157705783844,-2.0,-2.0,0.581579178571701,1.0723527669906616,-2.0,-2.0,-1.2554917335510254,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[4.0257378796606243e-16,-6.220973218301644,5.95026301230325,24.757855838023065,-7.070378174733547,-11.179625015955484,-24.214738698742295,-5.691156096887358,11.347055150182197,1.724445224888269,11.011940166420343,-27.2306860634176,23.594013236919924,49.29699009010789,19.219038453398575]},{"feature":[8,6,8,-2,-2,0,-2,-2,3,7,-2,-2,2,-2,-2],"threshold":[0.32360216975212097,0.4686724990606308,-0.9315943121910095,-2.0,-2.0,-1.916826605796814,-2.0,-2.0,1.2694032192230225,2.087419271469116,-2.0,-2.0,1.2016351222991943,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[9.6617709111855e-16,-5.909924557386565,-0.6062076713518477,-17.00860603464976,3.7677652255275946,-16.51735832945599,20.48810394152926,-19.12337679924369,10.779702392673096,5.622822445380673,2.016554802958213,38.079231227182824,31.407222181842776,45.16292181442645,18.709653290227102]},{"feature":[3,2,9,-2,-2,-2,2,7,-2,-2,5,-2,-2],"threshold":[-0.8172909617424011,2.4459248185157776,2.081978142261505,-2.0,-2.0,-2.0,0.24273301661014557,1.1053942441940308,-2.0,-2.0,2.7314631938934326,-2.0,-2.0],"left":[1,2,3,-1,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,5,4,-1,-1,-1,10,9,-1,-1,12,-1,-1],"value":[3.2205903037284995e-15,-14.169810433501702,-15.519409113271264,-16.87602285668428,94.36630410318307,96.49728130760235,4.355904688817195,-1.9450677727378562,-4.640852497707303,24.833060495291946,14.104579063298598,16.063910690906294,-53.1658068178993]},{"feature":[3,2,9,-2,-2,-2,2,0,-2,-2,5,-2,-2],"threshold":[-0.8172909617424011,2.4459248185157776,2.081978142261505,-2.0,-2.0,-2.0,0.24273301661014557,0.5954984426498413,-2.0,-2.0,2.7314631938934326,-2.0,-2.0],"left":[1,2,3,-1,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,5,4,-1,-1,-1,10,9,-1,-1,12,-1,-1],"value":[2.5764722429827997e-15,-13.461319911826614,-14.743438657607692,-16.03222171385006,89.64798889802393,91.67241724222222,4.138109454376336,-1.8478143841009618,-8.005839262123061,9.111382432718026,13.399350110133652,15.260715156360979,-50.50751647700432]},{"feature":[8,3,0,-2,-2,-2,0,3,-2,-2,3,-2,-2],"threshold":[-0.7083825469017029,2.277005910873413,1.694640576839447,-2.0,-2.0,-2.0,-1.8383163809776306,-0.3904913663864136,-2.0,-2.0,0.3208412230014801,-2.0,-2.0],"left":[1,2,3,-1,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,5,4,-1,-1,-1,10,9,-1,-1,12,-1,-1],"value":[9.09816760803301e-15,-12.319773034067136,-13.421749667186596,-14.451337244176864,77.18195710795705,85.7561473135653,4.215891912798649,54.57595594889188,44.80635681202643,103.42395163321916,3.040170573434601,-4.152740037139544,12.206357546201664]},{"feature":[3,6,6,-2,-2,0,-2,-2,2,5,-2,-2,5,-2,-2],"threshold":[-0.8172909617424011,0.7037858068943024,0.429486945271492,-2.0,-2.0,0.47773319482803345,-2.0,-2.0,0.24273301661014557,-0.7414762675762177,-2.0,-2.0,2.7314631938934326,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[5.67629041032148e-15,-12.447280577197677,-5.950338119490429,-8.691628308476107,76.2883675500799,-31.628729738047696,-26.039462697056294,-45.601897340526165,3.8263862515089224,-1.7335010194434333,14.193589731935077,-6.0548047116779085,12.428475991472942,14.189902144943597,-48.04715527768615]},{"feature":[8,4,4,-2,-2,5,-2,-2,4,6,-2,-2,2,-2,-2],"threshold":[-0.9315943121910095,-0.8142020106315613,-0.9295421838760376,-2.0,-2.0,0.6312400549650192,-2.0,-2.0,-1.0881348848342896,0.7429713606834412,-2.0,-2.0,-0.4992745816707611,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-6.441180607456999e-16,-15.431168613404653,-4.877301798729164,-11.957788439961126,63.56740239984649,-28.940118136189266,-32.85500827453655,-0.23092378830925023,2.971542604608325,26.5148452481107,31.682125646791565,-25.157958738697914,1.0812044361519297,-12.27117009344861,6.021583012104134]},{"feature":[8,6,4,-2,-2,0,-2,-2,9,5,-2,-2,0,-2,-2],"threshold":[0.32360216975212097,-0.3150385022163391,-0.4825989902019501,-2.0,-2.0,-1.9168265461921692,-2.0,-2.0,0.581579178571701,1.0460176467895508,-2.0,-2.0,-0.9747047126293182,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-2.9387886521522555e-15,-4.857986265625779,5.791516026340307,23.52686366971409,-6.4868015729184565,-9.196672384574926,20.367173310276915,-11.350330017974724,8.86096694850141,0.3385069922760055,9.440456904721067,-24.09304277270811,19.707734165515568,-6.865685653508474,22.961622306620555]},{"feature":[3,2,9,-2,-2,-2,0,2,-2,-2,8,-2,-2],"threshold":[-0.8172909617424011,2.4459248185157776,2.081978142261505,-2.0,-2.0,-2.0,0.12443748489022255,0.9619096219539642,-2.0,-2.0,-0.7349122166633606,-2.0,-2.0],"left":[1,2,3,-1,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,5,4,-1,-1,-1,10,9,-1,-1,12,-1,-1],"value":[-1.2882361214913998e-15,-11.578324864306467,-12.779986299255944,-13.97922869312907,84.35864760446725,86.9579128015506,3.55926282865717,-3.7932980053890204,-9.387854107149794,17.46601518130191,9.441311495894125,-15.2076460393216,13.67785107225932]},{"feature":[8,2,8,-2,-2,3,-2,-2,5,-2,0,-2,-2],"threshold":[1.3076807856559753,1.9778892397880554,1.2330542206764221,-2.0,-2.0,-0.5683245286345482,-2.0,-2.0,-1.41631281375885,-2.0,-0.0325828252825886,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,11,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,12,-1,-1],"value":[-3.7841936068809866e-15,-2.082880291930876,-3.3587268501714513,-2.432671429853703,-49.66149786605873,33.40885123730691,82.61001716147308,28.488734644890304,18.340918126169065,-74.33329291723308,20.98875272740912,7.452524696610025,31.140923750508442]},{"feature":[3,6,1,-2,-2,0,-2,-2,0,2,-2,-2,5,-2,-2],"threshold":[-0.8172909617424011,-0.0015541017055511475,0.05959564447402954,-2.0,-2.0,-1.6027860045433044,-2.0,-2.0,0.12443748489022255,0.9619096219539642,-2.0,-2.0,-0.0633478183299303,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-9.420226638405861e-15,-10.878058321794486,-0.7936545839538146,16.15539466653911,-21.310924729287354,-21.208423126411752,1.9882943397497197,-26.831869784875146,3.3439957063294066,-3.5658304971174837,-8.778329684976661,16.241666416747393,8.871856669086917,20.81419886317783,0.22395370095212105]},{"feature":[8,4,4,-2,-2,5,-2,-2,4,6,-2,-2,2,-2,-2],"threshold":[-0.9315943121910095,-0.8142020106315613,-0.9295421838760376,-2.0,-2.0,0.6312400549650192,-2.0,-2.0,-1.0881348848342896,0.7429713606834412,-2.0,-2.0,-0.4992745816707611,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.006434469915156e-14,-13.52832028629877,-3.8180012616055117,-10.584375109176998,61.59027926491887,-25.957528637906144,-29.50269769019269,0.040377745528526056,2.605115730807524,24.887540711246686,29.68584869466851,-23.095539122971566,0.8160159148598533,-10.853846292866468,5.133864931718591]},{"feature":[9,3,2,-2,-2,0,-2,-2,8,0,-2,-2,8,-2,-2],"threshold":[0.8387904465198517,-0.2720544934272766,1.121726632118225,-2.0,-2.0,-0.0325828252825886,-2.0,-2.0,0.26109524071216583,2.0086811780929565,-2.0,-2.0,0.2926827073097229,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.5499090836693404e-14,-2.6979972375110703,-9.047136520779505,-6.111210708485655,-52.10738176775598,3.270193688761264,-8.950778492216752,9.380679779250267,12.663180582511552,-9.054188011250998,-13.75735624325753,75.60284016486656,22.259227170453144,112.65691686307756,17.84958377081293]},{"feature":[9,3,2,-2,-2,2,-2,-2,8,0,-2,-2,8,-2,-2],"threshold":[0.8387904465198517,-0.2720544934272766,1.121726632118225,-2.0,-2.0,-0.6590916216373444,-2.0,-2.0,0.26109524071216583,2.0086811780929565,-2.0,-2.0,0.2926827073097229,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.2278500532964905e-14,-2.5630973756355147,-8.59477969474053,-5.805650173061369,-49.5020126793682,3.106684004323199,-15.166954113448652,7.11797042041946,12.030021553385975,-8.601478610688451,-13.069488431094658,71.82269815662323,21.146265811930483,107.02407101992367,16.95710458227229]},{"feature":[8,9,4,-2,-2,3,-2,-2,4,6,-2,-2,2,-2,-2],"threshold":[-0.9315943121910095,-1.561847984790802,-0.8574545681476593,-2.0,-2.0,0.7120741605758667,-2.0,-2.0,-1.0881348848342896,0.7429713606834412,-2.0,-2.0,-0.4992745816707611,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-1.3003133351303817e-14,-12.3287086703464,13.171562082964705,26.499613071324273,-13.48453989375443,-17.11000943659222,-14.650121576766777,-54.008327333973945,2.3741094398977696,24.024192122708698,28.530601067943838,-21.039897329642677,0.6357816332487172,-9.934756689630925,4.546880812714184]},{"feature":[8,2,8,-2,-2,3,-2,-2,5,-2,8,-2,-2],"threshold":[1.3076807856559753,1.9778892397880554,1.2330542206764221,-2.0,-2.0,-0.5683245286345482,-2.0,-2.0,-1.41631281375885,-2.0,1.431740403175354,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,11,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,12,-1,-1],"value":[-8.131990516914461e-15,-1.7920469215687629,-2.9264790788767314,-2.045828325905323,-46.959016727447185,29.76579309081661,82.268179005207,24.515554499377576,15.779968726035955,-67.06090577939577,18.14685085476258,39.70541058874529,12.757210921266903]},{"feature":[6,1,6,-2,-2,0,-2,-2,3,0,-2,-2,1,-2,-2],"threshold":[-0.3934096097946167,0.05959564447402954,-0.942007303237915,-2.0,-2.0,-0.8176844120025635,-2.0,-2.0,-0.746157705783844,-1.6027860045433044,-2.0,-2.0,0.05959564447402954,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-9.943572562761742e-15,6.470608503833894,19.66330834541181,44.394086223460214,11.934940258521685,0.5759979363203593,-27.54687957734338,5.497501501211511,-4.055312242034163,-14.294307544694915,7.8762700854431715,-18.28501151811977,-0.23188994547096733,4.900381102585634,-9.325914083255471]},{"feature":[9,2,9,-2,-2,0,-2,-2,8,9,-2,-2,8,-2,-2],"threshold":[0.8387904465198517,2.5943262577056885,-0.10431749932467937,-2.0,-2.0,-1.0139597952365875,-2.0,-2.0,0.26109524071216583,1.8247669339179993,-2.0,-2.0,0.2926827073097229,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-9.057910229236405e-15,-2.332998023843743,-2.9760124124484366,2.0832159118677227,-8.916772944789383,43.803284358543216,75.93506574377363,33.09269056346641,10.950039111911696,-8.170690700451573,0.05127737706372404,-52.021187113866496,19.39873368016523,101.27293976952646,15.404869968489072]},{"feature":[8,9,8,-2,-2,9,-2,-2,4,5,-2,-2,2,-2,-2],"threshold":[-0.9315943121910095,-1.561847984790802,-1.7524868845939636,-2.0,-2.0,0.1957622990012169,-2.0,-2.0,-1.0881348848342896,-1.2122159004211426,-2.0,-2.0,-0.4992745816707611,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[-8.816365956456767e-15,-11.397481862849187,12.59690515396309,46.21832275914704,2.9907858381962478,-15.896429428501486,-19.834045518528733,7.166750527372376,2.194785358724326,22.651839598328717,13.312717281852395,42.66424456220655,0.5522481570042664,-9.115955365771121,4.129483460431158]},{"feature":[8,4,8,-2,-2,8,-2,-2,5,-2,5,-2,-2],"threshold":[1.3076807856559753,1.1177459955215454,0.2453492134809494,-2.0,-2.0,-0.16328391060233116,-2.0,-2.0,-1.41631281375885,-2.0,0.697077751159668,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,11,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,12,-1,-1],"value":[-6.843754395423061e-16,-1.6314900670116952,0.25594577482836617,-3.9549832305758654,11.236342928160923,-18.441465533399743,39.12968911529198,-26.665916197498568,14.366176423408534,-64.06524302913414,16.607074122052616,8.568053482210557,30.21157058947763]},{"feature":[3,7,2,-2,-2,-2,0,2,-2,-2,5,-2,-2],"threshold":[-0.8172909617424011,2.2459351420402527,1.4984381794929504,-2.0,-2.0,-2.0,0.12443748489022255,0.9619096219539642,-2.0,-2.0,-0.0633478183299303,-2.0,-2.0],"left":[1,2,3,-1,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,5,4,-1,-1,-1,10,9,-1,-1,12,-1,-1],"value":[-1.6102951518642498e-16,-8.456169237195652,-9.45654032112245,-10.879721061182194,47.4706892812672,73.57425964480188,2.5994890618045905,-3.476916963644191,-7.925811843920335,13.428883581405149,7.460613882163619,18.485459117633475,-0.5228947366249052]},{"feature":[8,9,4,-2,-2,3,-2,-2,0,9,-2,-2,3,-2,-2],"threshold":[-0.9315943121910095,-1.561847984790802,-0.8574545681476593,-2.0,-2.0,0.7120741605758667,-2.0,-2.0,-1.8383163809776306,-1.1331625580787659,-2.0,-2.0,-0.31935811042785645,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.0128689398303122e-16,-10.487258813830561,12.626742077040003,24.810808520766773,-11.741390810413543,-14.821133980868794,-12.456996010888318,-50.28320353057592,2.019505920230887,34.88551039062167,-8.015437687014497,47.14292412708914,0.988864665061838,-6.511499939180441,4.938524749210696]},{"feature":[5,9,6,-2,-2,8,-2,-2,-2],"threshold":[3.7453640699386597,0.8387904465198517,-0.3150385022163391,-2.0,-2.0,0.26109524071216583,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[6.038606819490937e-16,0.24210026946325575,-2.080476039426569,4.4677969409704525,-5.888439131287877,11.321931513511437,-7.623322109221614,19.89240339046209,-85.21929485106568]},{"feature":[3,8,4,-2,-2,0,-2,-2,-2],"threshold":[2.6326721906661987,-0.7349122166633606,-0.8142020106315613,-2.0,-2.0,-1.8383163809776306,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[8.212505274507673e-15,-0.23540692124036688,-8.242419188716177,1.0898761425675103,-15.787679243796612,2.313641927956057,48.244140280459966,1.257768402611137,82.86323627661136]},{"feature":[1,6,2,-2,-2,2,-2,-2,3,0,-2,-2,5,-2,-2],"threshold":[0.05959564447402954,-0.942007303237915,-0.4536125957965851,-2.0,-2.0,-1.2755286693572998,-2.0,-2.0,0.46310776472091675,-1.0532148480415344,-2.0,-2.0,-0.981783926486969,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.0466918487117623e-14,4.1133890609003405,39.933723716450764,-20.79343249898824,46.68118551816621,2.0896413402477734,-14.191816741372968,4.521287677113209,-4.633757556556388,-11.832576942480454,-29.33477448973831,-7.665387050276211,7.4416814133807625,48.04941736485041,3.8795993123746517]},{"feature":[7,9,9,-2,-2,8,-2,-2,-2],"threshold":[3.560456871986389,0.8387904465198517,-0.10431749932467937,-2.0,-2.0,0.26109524071216583,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.199669888138866e-14,0.22908508288674112,-1.9370443023235737,2.7458510518544434,-7.348390044929281,10.562587559873663,-7.031342151685788,18.521746238912463,-80.63794917612913]},{"feature":[6,5,6,-2,-2,8,-2,-2,1,6,-2,-2,3,-2,-2],"threshold":[-1.568976104259491,-0.40570394694805145,-2.0000171065330505,-2.0,-2.0,0.09266052022576332,-2.0,-2.0,0.05959564447402954,-0.942007303237915,-2.0,-2.0,0.46310776472091675,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[8.45404954728731e-15,29.717018652213547,-9.773600701383245,-5.174770971543225,-12.073015566303255,59.33498316741114,40.362775288912815,65.65905246024391,-0.6012113600158719,3.5714414734018862,34.694573254942114,1.9889093489167882,-5.451920278864011,-11.95290573678392,5.676885335541256]},{"feature":[6,1,6,-2,-2,3,-2,-2,5,2,-2,-2,7,-2,-2],"threshold":[1.2523834705352783,0.05959564447402954,-0.942007303237915,-2.0,-2.0,0.46310776472091675,-2.0,-2.0,0.7530398368835449,-0.30521105974912643,-2.0,-2.0,-0.44883436150848866,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.328493500288006e-14,1.4866819588639184,6.7094585037273475,35.925911518875616,4.680538155453162,-3.540240465567132,-9.9581366824248,6.604176135272404,-11.9696957713658,-16.706130567718045,-6.201997751159209,-33.21262499373908,44.86752178486117,23.70565874743596,55.44845330357377]},{"feature":[3,6,5,-2,-2,5,-2,-2,-2],"threshold":[2.6326721906661987,-0.3934096097946167,2.471404194831848,-2.0,-2.0,1.888740360736847,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.1191551305456536e-14,-0.22165694645201525,4.895838144404223,6.55425513806093,-31.036530051491173,-3.4437834851392806,-4.281583000767056,31.911356074352888,78.02324515111391]},{"feature":[3,6,1,-2,-2,2,-2,-2,5,7,-2,-2,9,-2,-2],"threshold":[-0.8172909617424011,-0.0015541017055511475,0.05959564447402954,-2.0,-2.0,0.47104305028915405,-2.0,-2.0,2.7314631938934326,1.3412349224090576,-2.0,-2.0,1.6104242205619812,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[9.621513532388891e-15,-7.351555956782209,0.47417263842766033,13.873535780847181,-15.7461090602907,-15.36815598114354,-11.45003571741808,-43.57862187996685,2.2599227570849143,2.7889745170160096,0.7567390954830937,16.715764317520954,-44.825683876782186,-60.354275933718995,-13.768499762908561]},{"feature":[3,6,5,-2,-2,8,-2,-2,2,-2,-2],"threshold":[2.383705735206604,-1.568976104259491,-0.40570394694805145,-2.0,-2.0,1.3076807856559753,-2.0,-2.0,0.17424000799655914,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,-1],"value":[1.2359015290558117e-14,-0.302826875484821,27.366966356930053,-9.144490906006496,54.750559304132466,-0.865874993586286,-2.285156227199574,11.664350754599594,53.146116647587945,74.08424593878408,32.20798735639181]},{"feature":[3,4,3,-2,-2,2,-2,-2,8,5,-2,-2,0,-2,-2],"threshold":[-1.2913941144943237,-0.8142020106315613,-1.8842898607254028,-2.0,-2.0,1.2929591536521912,-2.0,-2.0,-1.5562819838523865,-1.5907827615737915,-2.0,-2.0,-1.9168265461921692,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.0990264411473504e-14,-13.136316620954661,6.857827164887409,-24.0354505265387,22.304466010600464,-22.133681324583588,-20.051208022607064,-61.70067406213762,1.1757814259496562,-19.54408426552171,42.48933739664726,-24.315885931842406,2.1115172958870727,26.233521574173416,1.307450486610863]},{"feature":[6,1,6,-2,-2,0,-2,-2,5,2,-2,-2,7,-2,-2],"threshold":[1.2523834705352783,0.05959564447402954,-0.942007303237915,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0,0.7530398368835449,-0.30521105974912643,-2.0,-2.0,-0.44883436150848866,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.0668205381100655e-14,1.348353070371408,6.350813924493488,32.73285034627021,4.518728061870106,-3.466515501721095,-22.230284735585222,-0.47518997168478666,-10.85597087427226,-15.261765592430757,-5.210474763001099,-31.056651181534512,42.01356574362976,22.745503292357796,51.64759696926575]},{"feature":[3,0,9,-2,-2,3,-2,-2,9,-2,-2],"threshold":[2.383705735206604,0.12443748489022255,1.9533725380897522,-2.0,-2.0,-0.31935811042785645,-2.0,-2.0,0.28149938583374023,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,-1],"value":[1.509651704872734e-14,-0.286025651782234,-4.098260364344978,-5.1665031060829945,41.30205615952071,3.4615949131099573,-9.104107010326045,8.271902680675304,50.19750188778451,70.08872471442083,30.30627906114819]},{"feature":[5,7,5,-2,-2,0,-2,-2,-2],"threshold":[3.7453640699386597,2.087419271469116,1.052601397037506,-2.0,-2.0,-0.9747047126293182,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.9081997549591358e-14,0.20059656067099585,-0.6334047902337425,0.883061825773151,-12.605509653446054,20.335772032513965,-15.922792543251253,30.224471462268113,-70.60998935618389]},{"feature":[2,9,6,-2,-2,6,-2,-2,1,0,-2,-2,0,-2,-2],"threshold":[-1.2755286693572998,-0.018580416217446327,3.2116609811782837,-2.0,-2.0,1.017270177602768,-2.0,-2.0,0.05959564447402954,-1.3280004262924194,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.9444313958760816e-14,-12.054637238053518,-7.04676842279541,-9.300033110292638,47.03158407713808,-37.093981314344056,-46.55235396702743,-30.788399545888478,1.1196257496644333,5.750535360705481,26.574059011405645,3.1832516229479286,-3.6569099497741306,-25.302652620180925,-1.0655182216268344]},{"feature":[6,6,5,-2,-2,5,-2,-2,8,5,-2,-2,6,-2,-2],"threshold":[0.4686724990606308,0.3903014063835144,3.7453640699386597,-2.0,-2.0,-0.9356975257396698,-2.0,-2.0,1.0946800708770752,-0.8138977587223053,-2.0,-2.0,0.6646002531051636,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.489523015474431e-14,2.2651530769916497,1.5226592960089225,1.797955975821382,-67.02621397729337,33.202393951271894,-41.80150126960146,48.203172995446565,-5.978135955771725,-8.685859933552422,7.340154350217141,-14.027864694808944,43.8439852353931,5.214672537987298,53.50131340974455]},{"feature":[3,4,3,-2,-2,2,-2,-2,8,5,-2,-2,0,-2,-2],"threshold":[-1.2913941144943237,-0.8142020106315613,-1.8842898607254028,-2.0,-2.0,1.2929591536521912,-2.0,-2.0,-1.5562819838523865,-1.5907827615737915,-2.0,-2.0,-1.9168265461921692,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.0748720138693867e-14,-11.989435264407922,6.2120102563024,-22.678393228120232,20.657211998513713,-20.180085748727567,-18.14343420507916,-58.87646507804722,1.073128465024179,-17.373760543757125,38.657395519655736,-21.683849471711962,1.9062137750981731,24.744658960091023,1.1449322689317456]},{"feature":[9,9,3,-2,-2,0,-2,-2,5,0,-2,-2,0,-2,-2],"threshold":[0.8387904465198517,-0.10431749932467937,0.3208412230014801,-2.0,-2.0,-1.7598062753677368,-2.0,-2.0,0.7991262376308441,0.5954984426498413,-2.0,-2.0,-0.346623457968235,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.4412141609185034e-14,-1.64543075821519,2.910672547390045,-2.539048896738766,22.465555376322847,-6.910261244692355,64.88376899383012,-7.989870721963367,7.722908881300408,15.182770633201581,0.681364963446092,33.096271754664244,-4.088538892543117,30.557846503439738,-18.354697585006647]},{"feature":[2,9,9,-2,-2,3,-2,-2,3,-2,0,-2,-2],"threshold":[2.5943262577056885,0.8387904465198517,-0.10431749932467937,-2.0,-2.0,-0.16535460203886032,-2.0,-2.0,-0.6750244200229645,-2.0,-0.6606640964746475,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,11,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,12,-1,-1],"value":[1.360699403325291e-14,-0.41820514380368323,-2.071445554175835,2.712136949807087,-7.688531070216385,7.36015547548824,24.135408025254666,1.8899644266513598,29.10707800873743,61.236331221018474,21.07476470566717,8.445146703459457,33.704382707874885]},{"feature":[6,1,0,-2,-2,0,-2,-2,5,2,-2,-2,2,-2,-2],"threshold":[1.2523834705352783,0.05959564447402954,-1.3280004262924194,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0,0.7530398368835449,-0.30521105974912643,-2.0,-2.0,0.44821202754974365,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.6183466276235708e-14,1.219287035255022,5.7475154095000995,20.99622607437655,3.0702608652851513,-3.1391327749558626,-19.593186268152937,-0.5160227977795178,-9.816823822309535,-13.751150975178398,-4.1434548580669315,-28.848959159210697,37.39510201211677,29.42913552048057,53.32703499538917]},{"feature":[2,8,6,-2,-2,2,-2,-2,1,0,-2,-2,3,-2,-2],"threshold":[-1.2755286693572998,-0.010881503112614155,3.7994441986083984,-2.0,-2.0,-1.3440216779708862,-2.0,-2.0,0.05959564447402954,-1.3280004262924194,-2.0,-2.0,-0.2720544934272766,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.4331626851591823e-14,-11.263928586464555,-8.556585349147579,-10.473645497964917,43.20403866892059,-49.166733908902245,-54.46695811842787,-43.86650969937662,1.0461853176283,5.253364981666429,23.495035605376774,3.0043918910720016,-3.2932955937066235,-13.04083867147388,1.4438281450213915]},{"feature":[6,6,5,-2,-2,8,-2,-2,8,5,-2,-2,0,-2,-2],"threshold":[0.4686724990606308,0.3903014063835144,3.7453640699386597,-2.0,-2.0,-1.7503874897956848,-2.0,-2.0,1.0946800708770752,-0.8138977587223053,-2.0,-2.0,1.4983652234077454,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.4975744912337522e-14,2.112140963237998,1.4203264245282157,1.6788630908970823,-62.955303501319605,30.937746742812212,-37.00418688820784,44.52613346901622,-5.574310171019817,-8.019279119042505,6.508283873646705,-12.86180011660557,39.413118472597645,48.43287932986781,3.3340750435170037]},{"feature":[0,6,5,-2,-2,1,-2,-2,-2],"threshold":[2.1264464259147644,-1.568976104259491,-0.40570394694805145,-2.0,-2.0,0.05959564447402954,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[2.089357959543864e-14,-0.18121247825550058,23.841937312821187,-8.753517536187701,48.28852844957785,-0.6686387059005334,2.665028854280238,-4.568400757432756,63.78679234594341]},{"feature":[3,4,3,-2,-2,3,-2,-2,6,1,-2,-2,5,-2,-2],"threshold":[-1.2913941144943237,-0.8142020106315613,-1.8842898607254028,-2.0,-2.0,-1.3746200203895569,-2.0,-2.0,1.2523834705352783,0.05959564447402954,-2.0,-2.0,0.7530398368835449,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.616729621779406e-14,-11.26944915047419,4.99586019548067,-21.923553378294642,18.455566982368328,-18.58883835615388,-14.988134165060703,-38.992828772348524,1.0086852634683958,2.257916439924607,6.944837774003761,-1.8776023842628815,-8.985164148181287,-12.878525425154542,33.84180989852451]},{"feature":[3,0,9,-2,-2,5,-2,-2,2,-2,-2],"threshold":[2.383705735206604,0.12443748489022255,1.9533725380897522,-2.0,-2.0,-0.07322347536683083,-2.0,-2.0,0.17424000799655914,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,-1],"value":[2.495957485389587e-14,-0.2481137313794356,-3.7391580572256378,-4.698427104665536,37.02977645897007,3.1837603516558133,11.48936584327624,-3.3600500356814917,43.5439598570954,59.644150284055485,27.44376943013532]},{"feature":[2,3,2,-2,-2,0,-2,-2,2,0,-2,-2,-2],"threshold":[2.5943262577056885,-0.8172909617424011,1.121726632118225,-2.0,-2.0,0.12443748489022255,-2.0,-2.0,3.1194393634796143,-0.6606640964746475,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,-1],"value":[2.508034699028569e-14,-0.3894965129560835,-6.58736733795657,-3.3757069845058707,-36.295225607375514,1.5211253203147437,-3.3382822762386595,5.336901755192245,27.108957301745203,19.50087990432553,8.281826199632604,30.719933609018454,57.5412668914239]},{"feature":[4,4,3,-2,-2,5,-2,-2,0,7,-2,-2,3,-2,-2],"threshold":[-0.497016504406929,-0.5835216641426086,0.46310776472091675,-2.0,-2.0,-0.5176280438899994,-2.0,-2.0,-1.8383163809776306,-0.44883436150848866,-2.0,-2.0,-0.31935811042785645,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.636858311177709e-14,4.659832702546794,1.8507619399760424,-2.9956327612553517,20.795759408426036,55.22310642882032,86.7926892779077,23.65352357973296,-2.2226817074909015,46.17370204450268,85.97182180291068,32.90766212503335,-3.0464499415673867,-11.268813674184202,0.7327731405049374]},{"feature":[6,6,7,-2,-2,8,-2,-2,8,5,-2,-2,6,-2,-2],"threshold":[0.4686724990606308,0.3903014063835144,3.560456871986389,-2.0,-2.0,-1.7503874897956848,-2.0,-2.0,1.0946800708770752,-0.8138977587223053,-2.0,-2.0,0.6646002531051636,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.6328325732980484e-14,1.9427572489296105,1.2945216815485652,1.537150448772247,-59.120041357148864,28.95257255647317,-34.2800602796047,41.599099123688745,-5.127276863154337,-7.359818488842282,5.890484799783429,-11.776586251717516,35.95148904950385,2.551396716926206,44.301512132648256]},{"feature":[0,6,5,-2,-2,1,-2,-2,-2],"threshold":[2.1264464259147644,-1.568976104259491,-0.40570394694805145,-2.0,-2.0,0.05959564447402954,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[2.1698727171370765e-14,-0.16645024365483704,21.73854937449539,-8.222477513239136,44.209319540296285,-0.6108995112694803,2.4944579025427185,-4.243581768936574,58.59048576651071]},{"feature":[9,9,3,-2,-2,7,-2,-2,3,3,-2,-2,5,-2,-2],"threshold":[0.8387904465198517,-0.10431749932467937,0.3208412230014801,-2.0,-2.0,0.9391459226608276,-2.0,-2.0,-0.16535460203886032,-0.8290279507637024,-2.0,-2.0,0.7991262376308441,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.6344495791422136e-14,-1.4212210734839696,2.6251087599206877,-2.061123556860449,19.44041295542948,-6.096979992084907,-9.677387141268936,12.293293092360345,6.670569877158713,21.918902598184502,5.248905210159862,38.58889998620914,1.3668019741932227,11.57191599881694,-19.72376701002913]},{"feature":[2,8,8,-2,-2,7,-2,-2,4,5,-2,-2,4,-2,-2],"threshold":[-1.2755286693572998,-0.010881503112614155,-0.07606049068272114,-2.0,-2.0,-0.0622103214263916,-2.0,-2.0,-0.3528412878513336,-0.2970716953277588,-2.0,-2.0,-0.12216093391180038,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.1191551305456536e-14,-9.93502200875855,-7.2648572097979605,-8.976884423142312,38.95987755049953,-47.31732919420676,-42.59328426224528,-52.04137412616825,0.922757462113811,6.245202177731838,2.6403624260243657,37.37790912429634,-1.677146408188085,-16.507261899306496,1.572148558967076]},{"feature":[3,6,5,-2,-2,2,-2,-2,5,9,-2,-2,6,-2,-2],"threshold":[2.004209876060486,-0.3934096097946167,2.471404194831848,-2.0,-2.0,0.6422755718231201,-2.0,-2.0,-0.21806644275784492,1.5246871709823608,-2.0,-2.0,0.11600255221128464,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.2560302184541147e-14,-0.48826426209001,3.687252872838264,5.069814460700694,-26.268248197514414,-3.2184100810815703,-0.9943408237334656,-15.012716748836676,18.662545128774106,-9.510111313481097,-6.725928464282632,-12.294294162679563,26.71187554084702,14.594400452962347,42.868508991359924]},{"feature":[6,6,8,-2,-2,4,-2,-2,8,0,-2,-2,0,-2,-2],"threshold":[0.4686724990606308,0.3903014063835144,-0.9315943121910095,-2.0,-2.0,-1.1169699430465698,-2.0,-2.0,1.0946800708770752,1.3806000351905823,-2.0,-2.0,1.4983652234077454,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[5.03217234957578e-15,1.7968684267291755,1.197026688820297,-8.545282957609011,2.525523458787931,26.79027417293243,-32.333123079449166,38.61495362340875,-4.742250693223367,-6.799566643068225,-4.735481369499318,-31.863459250690635,33.11236278392194,40.890675542983736,1.999111747674732]},{"feature":[4,4,3,-2,-2,5,-2,-2,0,7,-2,-2,3,-2,-2],"threshold":[-0.497016504406929,-0.5835216641426086,0.46310776472091675,-2.0,-2.0,-0.5176280438899994,-2.0,-2.0,-1.8383163809776306,-0.44883436150848866,-2.0,-2.0,-0.31935811042785645,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.1634382472219204e-14,4.27166729143268,1.6601967957712274,-2.6692911292256496,18.58455868439539,51.27813621333877,82.33258362871446,20.22368879796309,-2.037531678758667,43.983115060518244,82.82909016900064,31.034456691024115,-2.820861836022954,-10.37985953976064,0.653460089918589]},{"feature":[2,3,2,-2,-2,5,-2,-2,-2],"threshold":[3.1194393634796143,-0.8172909617424011,1.121726632118225,-2.0,-2.0,2.471404194831848,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.0024087320354955e-14,-0.15544873199885012,-5.477832111363494,-2.5003063909871215,-33.019945024844894,1.460978812845226,2.0649507168888444,-25.113784965074007,54.71795366359879]},{"feature":[1,6,4,-2,-2,2,-2,-2,0,3,-2,-2,6,-2,-2],"threshold":[0.05959564447402954,-0.942007303237915,-0.29517120122909546,-2.0,-2.0,0.6536910831928253,-2.0,-2.0,-1.0532148480415344,0.3208412230014801,-2.0,-2.0,0.7037858068943024,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[8.57482168367713e-15,2.6944180251143672,26.570755019933927,54.54670601324836,14.581061737084882,1.3454724321867084,4.691834146965686,-8.470521931164962,-3.0352781367252013,-16.61426306682802,-22.438453533596384,11.050641650321715,-0.8512455955198533,1.2485049130729202,-16.41410230626629]},{"feature":[5,-2,4,4,-2,-2,0,-2,-2],"threshold":[-2.3841272592544556,-2.0,-0.497016504406929,-0.5835216641426086,-2.0,-2.0,-1.8383163809776306,-2.0,-2.0],"left":[1,-1,3,4,-1,-1,7,-1,-1],"right":[2,-1,6,5,-1,-1,8,-1,-1],"value":[7.407357698575548e-15,-53.39238816703346,0.15168292092907995,4.569144618756768,2.086350562061017,48.84563862983102,-1.9369077562865222,41.50318577814806,-2.676313603681154]},{"feature":[3,6,9,-2,-2,2,-2,-2,6,-2,-2],"threshold":[2.383705735206604,-0.3150385022163391,-0.10431749932467937,-2.0,-2.0,0.7221840918064117,-2.0,-2.0,0.11600255221128464,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,-1],"value":[4.991914970779174e-15,-0.21378493143889335,3.206655229607448,12.923111350955635,-1.0262563480095852,-2.621376306932675,-0.6643071008075379,-14.10284898286681,37.51925546752669,24.90849781077472,50.13001312427866]},{"feature":[9,5,5,-2,-2,5,-2,-2,3,3,-2,-2,5,-2,-2],"threshold":[0.8387904465198517,-0.07980724424123764,-0.14564496278762817,-2.0,-2.0,0.1769598424434662,-2.0,-2.0,-0.16535460203886032,-1.3034867644309998,-2.0,-2.0,0.7991262376308441,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[8.172247895711068e-15,-1.3233883556414845,2.4845626912623255,1.4663618583673446,41.1761943412716,-5.72368734317478,-22.609737193291913,-0.6903455609283227,6.211387282123789,21.193070713628597,-5.632504956139202,30.134929270217864,1.0003669581221137,10.420280310665122,-18.46745397046676]},{"feature":[3,5,0,-2,-2,4,-2,-2,5,5,-2,-2,6,-2,-2],"threshold":[2.004209876060486,-0.07322347536683083,0.04592732875607908,-2.0,-2.0,-0.12216093391180038,-2.0,-2.0,-0.21806644275784492,-0.4386227875947952,-2.0,-2.0,0.11600255221128464,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[9.500741395999074e-15,-0.44621964798796615,2.5319932039553925,-4.071281789351601,9.860017891649742,-3.4592653987844644,-22.800902311753994,-0.1473412698513259,17.055506545318167,-9.057957288830487,-6.429657277976119,-11.686257299684854,24.516496212217785,13.39861892763954,39.34033259165545]},{"feature":[6,1,0,-2,-2,0,-2,-2,5,2,-2,-2,2,-2,-2],"threshold":[1.2523834705352783,0.05959564447402954,-1.3280004262924194,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0,0.7530398368835449,-0.01982351951301098,-2.0,-2.0,0.44821202754974365,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.1755154608609022e-14,0.9805964722459396,4.664596814607746,18.05797739786483,2.3130872465549777,-2.5652538572772987,-15.861357703830596,-0.44558512811662765,-7.895058776544135,-10.860307991979806,-4.412421122546352,-30.20396860028017,27.68793180868398,21.241319553243642,40.581156319564656]},{"feature":[7,7,5,-2,-2,0,-2,-2,-2],"threshold":[3.560456871986389,2.087419271469116,1.052601397037506,-2.0,-2.0,-0.9747047126293182,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.3043390730100423e-14,0.14647274013423173,-0.5764938841665393,0.7629001807306307,-11.150657554407351,17.600952669681384,-11.206161398528613,25.457438324647743,-51.55840452724476]},{"feature":[2,8,2,-2,-2,3,-2,-2,1,2,-2,-2,0,-2,-2],"threshold":[-1.2755286693572998,-0.010881503112614155,-1.6408247351646423,-2.0,-2.0,0.427541121840477,-2.0,-2.0,0.05959564447402954,0.6536910831928253,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.4653685881964672e-14,-9.048088093293,-6.390079842540945,5.842931868400928,-12.18466433719762,-46.26020360382175,-49.83126079390203,-42.68914641374147,0.8403796990674791,4.2655507213586015,8.052301225224532,-4.124700395050227,-2.6925011037988362,-19.395372681005878,-0.6928615487810924]},{"feature":[6,6,8,-2,-2,8,-2,-2,8,5,-2,-2,8,-2,-2],"threshold":[0.4686724990606308,0.3903014063835144,-0.9315943121910095,-2.0,-2.0,-1.7503874897956848,-2.0,-2.0,1.0946800708770752,-0.8138977587223053,-2.0,-2.0,1.2881175875663757,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.4774458018354492e-14,1.6915684023848003,1.1214540180902128,-7.714416240309139,2.3263454169628544,25.446334414659276,-27.78049189448822,36.09169967648878,-4.464345474335086,-6.337265679770694,5.1430707760989645,-10.164044498393917,29.997386305680084,41.95328504294153,12.063538199787914]},{"feature":[4,-2,5,3,-2,-2,5,-2,-2],"threshold":[-2.227119207382202,-2.0,-0.981783926486969,0.6765075325965881,-2.0,-2.0,-0.8896111249923706,-2.0,-2.0],"left":[1,-1,3,4,-1,-1,7,-1,-1],"right":[2,-1,6,5,-1,-1,8,-1,-1],"value":[1.0587690623507443e-14,-51.372875378522636,0.14594566868899442,6.696515697523301,0.5446051591433198,39.76303484131571,-0.9639515787214687,-23.360521238671307,-0.11442652265440603]},{"feature":[6,3,4,-2,-2,9,-2,-2,5,2,-2,-2,3,-2,-2],"threshold":[1.2523834705352783,1.956906259059906,-0.497016504406929,-2.0,-2.0,1.8247669339179993,-2.0,-2.0,0.7530398368835449,-0.01982351951301098,-2.0,-2.0,0.7832074016332626,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[5.837319925507905e-15,0.9341760524301692,0.2292212709216704,5.002303714259344,-2.389854736448231,18.675538053727358,26.631228303449472,-21.1029131948832,-7.5213148836684764,-10.2594391343018,-4.104506297791835,-28.724237643831707,25.336176123931455,19.696727488881578,36.615073394031214]},{"feature":[4,7,-2,-2,2,5,-2,-2,4,-2,-2],"threshold":[-2.169449210166931,-0.8354583997279406,-2.0,-2.0,2.30893874168396,-0.981783926486969,-2.0,-2.0,0.44012245535850525,-2.0,-2.0],"left":[1,2,-1,-1,5,6,-1,-1,9,-1,-1],"right":[4,3,-1,-1,8,7,-1,-1,10,-1,-1],"value":[8.977395471643193e-15,-35.30997080567545,-49.05434679530947,-21.565594816041425,0.20119641484716283,-0.2063209347865033,6.777376646137541,-1.3940246050116811,20.227763311130207,28.297256970182758,0.05402916349882503]},{"feature":[9,9,3,-2,-2,7,-2,-2,8,3,-2,-2,8,-2,-2],"threshold":[0.8387904465198517,-0.10431749932467937,0.3208412230014801,-2.0,-2.0,0.9391459226608276,-2.0,-2.0,0.26109524071216583,0.14300807937979698,-2.0,-2.0,0.2926827073097229,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.2842103836117391e-14,-1.2298887719635583,2.461050598985818,-1.5573186433136208,16.87990493900145,-5.494974267282838,-8.784298377000122,11.400190478083175,5.772542461958067,-7.064246395937941,9.633453895826374,-25.61724672012052,11.444611957307465,89.59849587748704,7.632227375835291]},{"feature":[3,8,-2,4,-2,-2,0,2,-2,-2,2,-2,-2],"threshold":[-1.2913941144943237,-1.833411991596222,-2.0,-1.8378461003303528,-2.0,-2.0,-1.9168265461921692,0.13999351859092712,-2.0,-2.0,1.4413606524467468,-2.0,-2.0],"left":[1,2,-1,4,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,3,-1,5,-1,-1,10,9,-1,-1,12,-1,-1],"value":[1.2681074320930966e-14,-8.786666755794174,37.90351565774111,-10.454173270563292,34.15839156585163,-12.106490486726807,0.7864609133272686,16.21228507873084,10.218672554422499,76.14841032181428,0.24433929729072304,-0.7562016299445642,9.346034183753655]},{"feature":[0,1,6,-2,-2,8,-2,-2,-2],"threshold":[2.1264464259147644,0.05959564447402954,-0.942007303237915,-2.0,-2.0,1.3257172107696533,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.7672989291710142e-14,-0.1400519940982381,2.35510827599451,23.316162627922967,1.1708679171284926,-2.967900300203349,-4.734084894632432,9.836938009407508,49.298301922585836]},{"feature":[7,7,5,-2,-2,0,-2,-2,2,-2,-2],"threshold":[3.1390366554260254,2.087419271469116,1.052601397037506,-2.0,-2.0,-0.9747047126293182,-2.0,-2.0,0.9847406148910522,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,-1],"value":[2.1457182898591126e-14,0.1980403669708687,-0.5193291956013112,0.7676940789032528,-10.680039257479455,18.84964899384756,-10.580003878708917,27.678544855614508,-34.756084403383866,-48.97434024364881,-20.53782856311892]},{"feature":[2,8,9,-2,-2,2,-2,-2,1,2,-2,-2,0,-2,-2],"threshold":[-1.2755286693572998,-0.010881503112614155,-0.018580416217446327,-2.0,-2.0,-1.3440216779708862,-2.0,-2.0,0.05959564447402954,0.6536910831928253,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.0692292701455608e-14,-8.455881963086508,-5.911677976259763,-2.690583068441882,-25.238247423167042,-44.07473777866095,-47.24235181798801,-40.9071237393339,0.7853760337232292,3.957768777416739,7.684872912428673,-4.30032469819794,-2.4867774880738525,-18.286354764056494,-0.5952788001040988]},{"feature":[4,3,-2,-2,2,2,-2,-2,3,-2,-2],"threshold":[-2.169449210166931,1.0677404999732971,-2.0,-2.0,1.5098536610603333,1.4870226383209229,-2.0,-2.0,-0.485454261302948,-2.0,-2.0],"left":[1,2,-1,-1,5,6,-1,-1,9,-1,-1],"right":[4,3,-1,-1,8,7,-1,-1,10,-1,-1],"value":[2.2101300959336828e-14,-34.08815237560261,-46.605776200619786,-21.570528550585436,0.19423448647069158,-0.5313055614202924,-0.3537177019158189,-58.24735990037391,9.655276710969122,34.72760725398483,4.879594702775654]},{"feature":[6,3,4,-2,-2,5,-2,-2,5,2,-2,-2,2,-2,-2],"threshold":[1.2523834705352783,1.956906259059906,-0.497016504406929,-2.0,-2.0,-0.33986620604991913,-2.0,-2.0,0.7530398368835449,-0.1796405389904976,-2.0,-2.0,0.44821202754974365,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.2141558338133433e-14,0.8888391019623069,0.23800951096892775,4.752809397877674,-2.2393422218476666,17.268050475295706,-20.823762504356253,24.886413071226094,-7.156294308106576,-9.71278617519072,-2.9166983818262753,-25.15844025101901,23.52160809690316,18.204043847545066,34.15673659561935]},{"feature":[3,8,-2,5,-2,-2,8,5,-2,-2,9,-2,-2],"threshold":[-1.2913941144943237,-1.833411991596222,-2.0,-1.933138906955719,-2.0,-2.0,-1.5562819838523865,-1.5907827615737915,-2.0,-2.0,-0.10431749932467937,-2.0,-2.0],"left":[1,2,-1,4,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,3,-1,5,-1,-1,10,9,-1,-1,12,-1,-1],"value":[2.2222073095726647e-14,-8.32475460960016,35.30721354463296,-9.883039186537053,31.749345657337926,-11.424979365939832,0.74511692493337,-12.311292687823144,31.127591935354374,-15.65274535114449,1.3347612300256002,5.43528701515993,-1.4732075141424752]},{"feature":[9,9,3,-2,-2,7,-2,-2,3,9,-2,-2,5,-2,-2],"threshold":[0.8387904465198517,-0.10431749932467937,0.3208412230014801,-2.0,-2.0,0.9391459226608276,-2.0,-2.0,-0.16535460203886032,1.524687111377716,-2.0,-2.0,0.7991262376308441,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.3631081353607864e-14,-1.1685235481983656,2.2316833270849155,-1.5389539246665693,15.76161699513436,-5.097651492970153,-8.175350691945523,10.710530756312405,5.484521814931171,19.185224306837526,11.143866441562347,43.309297902663054,0.7190600786159161,9.197219139719712,-16.802468647665258]},{"feature":[4,1,-2,-2,4,9,-2,-2,0,-2,-2],"threshold":[-2.169449210166931,0.05959564447402954,-2.0,-2.0,-1.4485729932785034,0.23863083869218826,-2.0,-2.0,-1.9168265461921692,-2.0,-2.0],"left":[1,2,-1,-1,5,6,-1,-1,9,-1,-1],"right":[4,3,-1,-1,8,7,-1,-1,10,-1,-1],"value":[2.411416989916714e-14,-32.910093871821566,-44.03069995017829,-21.789487793464843,0.18752190240356542,10.250741691023107,6.934834099618615,76.56889351911292,-0.4528648114176763,19.124128057691166,-1.0017524619534404]},{"feature":[0,7,7,-2,-2,3,-2,-2,-2],"threshold":[2.1264464259147644,3.1390366554260254,2.087419271469116,-2.0,-2.0,0.6053742524236441,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[2.5764722429827996e-14,-0.1314451662486593,0.05377505571859242,-0.6355155975956817,17.92230968394247,-32.544984010517894,-45.40233486408491,-19.68763315695088,46.26869851953737]},{"feature":[2,8,8,-2,-2,5,-2,-2,1,2,-2,-2,0,-2,-2],"threshold":[-1.2755286693572998,-0.010881503112614155,-0.07606049068272114,-2.0,-2.0,-0.10943421721458435,-2.0,-2.0,0.05959564447402954,0.6536910831928253,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.419468465676035e-14,-7.910978829297705,-5.498157127592861,-6.937284796879685,33.35828994315139,-41.69048265316556,-38.51743082388346,-44.86353448244766,0.7347658355385119,3.697359843419184,7.309192640238111,-4.305328510316862,-2.3209915059233164,-17.64616693169641,-0.48628740565470857]},{"feature":[6,9,5,-2,-2,9,-2,-2,8,8,-2,-2,8,-2,-2],"threshold":[0.23355919867753983,-1.2188996076583862,0.4403107017278671,-2.0,-2.0,-0.5330029278993607,-2.0,-2.0,1.0946800708770752,0.8022812306880951,-2.0,-2.0,1.2881175875663757,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.6022436761049283e-14,1.8204301971061503,17.115979360579644,5.715923275100974,51.316147617015666,0.6605781278380184,-12.091284793940098,3.283818500318089,-3.279663926532465,-4.605418161000062,-2.981791162198569,-35.454331138228405,23.235420762819526,36.187969210112605,10.282872315526447]},{"feature":[2,3,2,-2,-2,5,-2,-2,-2],"threshold":[3.1194393634796143,-0.8172909617424011,1.121726632118225,-2.0,-2.0,2.471404194831848,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.489523015474431e-14,-0.12850257450416966,-4.70838441534222,-2.1029825844361696,-28.80835135122321,1.2624245030836831,1.794104507159675,-22.13149567625996,45.23290622547336]},{"feature":[6,3,4,-2,-2,5,-2,-2,5,2,-2,-2,4,-2,-2],"threshold":[1.2523834705352783,1.956906259059906,-0.497016504406929,-2.0,-2.0,-0.33986620604991913,-2.0,-2.0,0.7530398368835449,-0.01982351951301098,-2.0,-2.0,2.1990601420402527,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.199669888138866e-14,0.8382880787203489,0.23020125850663226,4.525007248052271,-2.1264358742184086,16.14180638743224,-20.316493337531014,23.433466332424892,-6.749293762004754,-9.034069114211102,-3.3760354766098684,-26.008170027014806,20.668010464471422,16.398838371494335,29.206354650425595]},{"feature":[9,9,8,-2,-2,0,-2,-2,8,3,-2,-2,8,-2,-2],"threshold":[0.8387904465198517,-0.10431749932467937,-0.7618235945701599,-2.0,-2.0,-1.7598062753677368,-2.0,-2.0,0.26109524071216583,0.14300807937979698,-2.0,-2.0,0.2926827073097229,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.1513610335829385e-14,-1.0998636750177042,2.1382304330201225,-6.038729863957304,7.531544671452041,-4.84166131097252,49.4402162252793,-5.657930146104127,5.162263377905733,-6.766851434951073,9.235905317587427,-24.547692271104964,10.433267597540132,84.23371850833458,6.833245601891628]},{"feature":[0,4,0,-2,-2,5,-2,-2,-2],"threshold":[2.1264464259147644,-2.169449210166931,0.47773319482803345,-2.0,-2.0,-0.981783926486969,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.3365449760473272e-14,-0.1270648183653896,-31.38935508120609,-42.04681832714695,-20.73189183526523,0.051576840279414775,6.178673266476668,-0.9696058974201284,44.72681606462194]},{"feature":[7,7,5,-2,-2,0,-2,-2,0,-2,-2],"threshold":[3.1390366554260254,2.087419271469116,1.052601397037506,-2.0,-2.0,-0.9747047126293182,-2.0,-2.0,0.2814578004181385,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,-1],"value":[1.7632731912913533e-14,0.17513411268953558,-0.48066642571853224,0.71028177061715,-9.88288902836866,17.225948111299303,-9.142319938607434,25.136428526271324,-30.736036777010284,-42.35238008331348,-19.11969347070709]},{"feature":[2,3,2,-2,-2,5,-2,-2,-2],"threshold":[3.1194393634796143,-0.8172909617424011,1.121726632118225,-2.0,-2.0,-0.06993158906698227,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[2.089357959543864e-14,-0.12227520814044078,-4.5043430097604205,-2.0538634978509993,-27.171278494922568,1.208575013092293,4.830066862871908,-1.7767088090233372,43.04087326544243]},{"feature":[6,6,5,-2,-2,5,-2,-2,8,0,-2,-2,8,-2,-2],"threshold":[0.4686724990606308,0.3903014063835144,0.3645973205566406,-2.0,-2.0,-0.9356975257396698,-2.0,-2.0,1.0946800708770752,1.3806000351905823,-2.0,-2.0,1.2881175875663757,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.0652035322659003e-14,1.4158796936395595,0.9112279742371575,-1.6359778525703248,5.43959388856157,22.44303466873967,-24.62644678598498,31.856930959684597,-3.7367546553785624,-5.200415208227136,-3.3957088390670953,-27.114706833741902,23.194599517035197,33.33616849307771,7.982246052971433]},{"feature":[4,8,-2,-2,4,9,-2,-2,0,-2,-2],"threshold":[-2.169449210166931,-0.13265076279640198,-2.0,-2.0,-1.4485729932785034,0.23863083869218826,-2.0,-2.0,-1.9168265461921692,-2.0,-2.0],"left":[1,2,-1,-1,5,6,-1,-1,9,-1,-1],"right":[4,3,-1,-1,8,7,-1,-1,10,-1,-1],"value":[1.8800195898015114e-14,-29.97111259152932,-40.0517094005107,-19.890515782547936,0.170775570322123,9.592392765645931,6.4867442647690225,71.70536278318409,-0.4287818875621186,17.81214623596877,-0.94020977887607]},{"feature":[2,8,2,-2,-2,5,-2,-2,1,2,-2,-2,0,-2,-2],"threshold":[-1.2755286693572998,-0.010881503112614155,-1.6408247351646423,-2.0,-2.0,-0.10943421721458435,-2.0,-2.0,0.05959564447402954,1.1902195811271667,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.831710735245584e-14,-7.441040026155654,-5.124511715733649,5.240134139186391,-10.034080804906301,-39.87243637206374,-37.24595100158655,-42.49892174254093,0.6911182686832078,3.5339997844883047,5.661575476090656,-8.29532106082076,-2.241162036927083,-16.72469348102045,-0.5072181316483]},{"feature":[6,3,4,-2,-2,9,-2,-2,0,4,-2,-2,3,-2,-2],"threshold":[1.2523834705352783,1.956906259059906,-0.497016504406929,-2.0,-2.0,1.8247669339179993,-2.0,-2.0,-0.11109298467636108,0.036431811517104506,-2.0,-2.0,-0.39049138128757477,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.9645600852743846e-14,0.7968845880250778,0.22630768445092894,4.22464340604816,-1.9676508909896047,15.156403327974493,22.131023553448944,-19.716697799397764,-6.415942580509427,-17.098669939417928,-2.8472686797492393,-33.725304742364735,-1.0745789010551756,-12.30785207320165,8.553940960784658]},{"feature":[9,5,5,-2,-2,5,-2,-2,3,9,-2,-2,5,-2,-2],"threshold":[0.8387904465198517,-0.07980724424123764,-0.14564496278762817,-2.0,-2.0,0.1769598424434662,-2.0,-2.0,-0.16535460203886032,1.524687111377716,-2.0,-2.0,0.7991262376308441,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[2.0450748428675973e-14,-1.0431847165683403,2.0044710150588183,1.0777346317018721,37.220453582622746,-4.564920228670836,-19.271613335291793,-0.18119439881266308,4.896237943893454,17.909830891928358,10.747527016745302,39.39674251747753,0.3697708315334883,8.216501777713955,-15.846806457239472]},{"feature":[8,3,3,-2,-2,5,-2,-2,4,5,-2,-2,4,-2,-2],"threshold":[-0.9315943121910095,0.7120741605758667,0.4986743927001953,-2.0,-2.0,-0.3563256487250328,-2.0,-2.0,-1.0881348848342896,-1.603950321674347,-2.0,-2.0,-0.7565318942070007,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.9887145125523485e-14,-5.089543383273472,-2.6491558580117878,-3.7808403037452476,57.33011976586151,-49.01651883798376,-100.08159206659761,-23.483982223676833,0.9800809893466054,14.985027062180079,-5.790118513504169,22.775706653061672,-0.14440373182980618,-14.15908420548585,1.387565388772273]},{"feature":[0,7,7,-2,-2,7,-2,-2,-2],"threshold":[2.1264464259147644,1.1324579119682312,0.799961268901825,-2.0,-2.0,1.1827190518379211,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[2.3429794459624834e-14,-0.11839827440123879,-1.0137558393437507,-0.5920549254153434,-32.53589915549218,5.4182005455493965,79.17723926501304,3.8815539055605703,41.676192589244465]},{"feature":[7,7,5,-2,-2,0,-2,-2,8,-2,-2],"threshold":[3.1390366554260254,2.087419271469116,1.052601397037506,-2.0,-2.0,-0.9747047126293182,-2.0,-2.0,1.5340417474508286,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,-1],"value":[2.5362148641861933e-14,0.16679546266702497,-0.44561992294050784,0.6950188800411925,-9.450663104374982,16.089595488462866,-8.150314454401391,23.361568471322144,-29.27260369805861,-39.71826703490369,-18.82694036121353]},{"feature":[2,3,2,-2,-2,5,-2,-2,-2],"threshold":[3.1194393634796143,-0.8172909617424011,1.121726632118225,-2.0,-2.0,2.471404194831848,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.8598909004032084e-14,-0.11674079451056536,-4.211130547633895,-1.9700368186041042,-24.94124754115945,1.1267405379194821,1.6041753493446018,-19.880391164785703,41.09275966772623]},{"feature":[6,9,4,-2,-2,9,-2,-2,8,8,-2,-2,8,-2,-2],"threshold":[0.23355919867753983,-1.2188996076583862,-0.06449084356427193,-2.0,-2.0,-0.5330029278993607,-2.0,-2.0,1.0946800708770752,0.8022812306880951,-2.0,-2.0,1.2881175875663757,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.521728918511716e-14,1.619452824343744,15.725410486840026,4.948918731665057,48.054885752364925,0.5498067456710409,-11.126783893827845,2.95184824865367,-2.9175856438573384,-4.0560032523403695,-2.5439815461493156,-32.78441566997041,19.850766525803284,31.47750904392539,8.22402400768118]},{"feature":[4,8,-2,-2,2,2,-2,-2,2,-2,-2],"threshold":[-2.169449210166931,-0.13265076279640198,-2.0,-2.0,1.4413606524467468,1.1902195811271667,-2.0,-2.0,1.4641916751861572,-2.0,-2.0],"left":[1,2,-1,-1,5,6,-1,-1,9,-1,-1],"right":[4,3,-1,-1,8,7,-1,-1,10,-1,-1],"value":[1.243953004815133e-14,-28.370848656219238,-38.36643747888098,-18.375259833557493,0.16165725730040711,-0.5416562621625121,0.2778225056261108,-14.290688921727183,7.421667780788616,69.51020186434019,5.3520499780035635]},{"feature":[6,1,2,-2,-2,0,-2,-2,3,3,-2,-2,2,-2,-2],"threshold":[1.2523834705352783,0.05959564447402954,1.1902195811271667,-2.0,-2.0,0.5954984426498413,-2.0,-2.0,1.9213396310806274,-0.4616246372461319,-2.0,-2.0,-0.430781576782465,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.2842103836117391e-14,0.7396945635557383,3.6029658267019244,5.827593695155039,-7.876113974516133,-2.016204027222466,-5.57965650328741,3.1919188224109156,-5.95548956298711,-4.279010577036768,-13.063788364906856,3.188050542652807,-36.970350803068456,-5.4880060197323814,-68.45269558640453]},{"feature":[8,8,8,-2,-2,7,-2,-2,1,9,-2,-2,4,-2,-2],"threshold":[2.722150683403015,2.1781017780303955,2.1461325883865356,-2.0,-2.0,1.8709098100662231,-2.0,-2.0,0.05959564447402954,0.1957622952759266,-2.0,-2.0,0.5698801577091217,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.2721331699727573e-14,0.22451027823054254,-0.12873747212529327,0.048935746138090874,-61.07065133646597,24.527955502712075,30.72098371418901,-0.24415734319566695,-19.588521775613692,-26.86773004283124,-21.48542604966218,-32.2500340360003,-12.309313508396144,-17.119877251802052,-7.498749764990237]},{"feature":[6,5,4,-2,-2,2,-2,-2,5,5,-2,-2,5,-2,-2],"threshold":[-1.568976104259491,-0.19831513613462448,-1.0160472989082336,-2.0,-2.0,1.1902196407318115,-2.0,-2.0,-0.5275036990642548,-0.573590099811554,-2.0,-2.0,0.3645973205566406,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.521728918511716e-14,14.808605622579146,-4.364236149848729,2.816230922484749,-11.544703222182207,40.372394652482974,34.067423230825156,52.98233749579862,-0.2995960675088097,3.1186720390763303,0.8310914500170141,40.10122489553529,-1.7484916023988075,-5.717457870353237,2.596842156482335]},{"feature":[0,0,2,-2,-2,3,-2,-2,-2],"threshold":[2.1264464259147644,1.7731507420539856,3.1194393634796143,-2.0,-2.0,0.17857471853494644,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.2842103836117391e-14,-0.11204480078319393,0.05143195911715801,-0.06102857560727262,39.30015857794359,-28.720477783344762,-31.363186796985588,-26.077768769703937,39.43976987568914]},{"feature":[2,8,9,-2,-2,0,-2,-2,1,5,-2,-2,0,-2,-2],"threshold":[-1.2755286693572998,-0.010881503112614155,0.06715666875243187,-2.0,-2.0,-0.7784293293952942,-2.0,-2.0,0.05959564447402954,-0.05676404573023319,-2.0,-2.0,-1.0532148480415344,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[1.4130339957608791e-14,-6.777450324711877,-4.553717277581393,-2.6538011090959994,-29.2526274678915,-37.90971298453866,-35.519988261818085,-40.29943770725923,0.629484550282852,3.3302570609544535,8.151214457241482,-1.609736320426075,-2.156217913554525,-15.632889842770302,-0.5428135276624942]},{"feature":[9,9,3,-2,-2,0,-2,-2,8,3,-2,-2,8,-2,-2],"threshold":[0.8387904465198517,-0.10431749932467937,0.3208412230014801,-2.0,-2.0,-1.9560816884040833,-2.0,-2.0,0.26109524071216583,0.14300807937979698,-2.0,-2.0,0.2926827073097229,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[9.621513532388891e-15,-0.9572955758201631,2.054820000234378,-1.2208200398444677,13.808587202870239,-4.4379624637054125,67.69948967690911,-4.9763016587846245,4.493113105865662,-6.894027991602262,8.71438653972667,-24.23671080418997,9.524640567537539,78.85840204187944,6.142505861472078]},{"feature":[4,4,-2,-2,4,9,-2,-2,0,-2,-2],"threshold":[-2.169449210166931,-2.227119207382202,-2.0,-2.0,-1.4485729932785034,0.23863083869218826,-2.0,-2.0,-1.9168265461921692,-2.0,-2.0],"left":[1,2,-1,-1,5,6,-1,-1,9,-1,-1],"right":[4,3,-1,-1,8,7,-1,-1,10,-1,-1],"value":[1.2278500532964905e-14,-27.629761129216455,-36.93919086064493,-18.32033139778798,0.1574345363488246,8.893403103918283,5.9869220978692175,67.0230232248996,-0.39849073613286884,16.02726276865463,-0.85902588112691]},{"feature":[0,7,7,-2,-2,7,-2,-2,-2],"threshold":[2.1264464259147644,1.1324579119682312,0.799961268901825,-2.0,-2.0,1.1827190518379211,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[1.147335295703278e-14,-0.11008440026292449,-0.9523752931441553,-0.5620622649805619,-30.128274148372782,5.098367447553662,75.91787056399232,3.6229611326278572,38.74970889255363]},{"feature":[3,8,-2,4,-2,-2,8,3,-2,-2,9,-2,-2],"threshold":[-1.2913941144943237,-1.833411991596222,-2.0,-1.8378461003303528,-2.0,-2.0,-1.5562819838523865,-0.995124101638794,-2.0,-2.0,-0.10431749932467937,-2.0,-2.0],"left":[1,2,-1,4,-1,-1,7,8,-1,-1,11,-1,-1],"right":[6,3,-1,5,-1,-1,10,9,-1,-1,12,-1,-1],"value":[6.239893713473967e-15,-6.867770513798435,32.66720565116569,-8.279733948261441,27.811382773609438,-9.616441974997397,0.6147078546301136,-10.571914270849707,-36.98045513215335,-6.170490793965765,1.1199101441679113,4.620226169784328,-1.277045395112895]},{"feature":[2,4,5,-2,-2,3,-2,-2,2,-2,7,-2,-2],"threshold":[1.4413606524467468,1.8674571514129639,2.0368751883506775,-2.0,-2.0,0.6765075325965881,-2.0,-2.0,1.4641916751861572,-2.0,0.6182479858398438,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,-1,11,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,10,-1,12,-1,-1],"value":[5.555518273931662e-15,-0.6480148321784126,-0.06916956501511547,-0.584682334181577,79.31979688661991,-16.96092690678046,-33.747149224451256,3.1825398744245006,6.5003987852897644,65.45702802065063,4.598572035761995,-4.350259868655676,15.465010776840595]},{"feature":[6,9,4,-2,-2,9,-2,-2,0,7,-2,-2,9,-2,-2],"threshold":[0.23355919867753983,-1.2188996076583862,-0.06449084356427193,-2.0,-2.0,-0.5330029278993607,-2.0,-2.0,0.7525187432765961,0.32441371493041515,-2.0,-2.0,0.41010500490665436,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[9.178682365626223e-15,1.512016349643645,14.61591350913175,4.448714035021442,45.11751193146268,0.5183559015308022,-10.35699354644612,2.7555706451146276,-2.724029455310354,-5.527678183026306,-4.665339208672987,-84.86286382353165,5.17716241370733,-2.355256189734081,33.154717226489716]},{"feature":[7,5,5,-2,-2,8,-2,-2,7,0,-2,-2,2,-2,-2],"threshold":[2.087419271469116,1.052601397037506,0.5160240828990936,-2.0,-2.0,0.1795022152364254,-2.0,-2.0,3.1390366554260254,-0.9747047126293182,-2.0,-2.0,0.9847406148910522,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,9,10,-1,-1,13,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,12,11,-1,-1,14,-1,-1],"value":[7.447615077372155e-15,-0.4211202929529655,0.6661411563604231,-0.9046648576659004,9.567375235842933,-9.004763313848143,13.939187343682207,-19.594279001939075,9.489243934540314,14.926150140526637,-6.945650103598505,21.48769021376418,-25.850646404370792,-35.554822484362546,-16.146470324379038]},{"feature":[0,0,1,-2,-2,4,-2,-2,-2],"threshold":[2.1264464259147644,1.7731507420539856,0.05959564447402954,-2.0,-2.0,-0.15099596977233887,-2.0,-2.0,-2.0],"left":[1,2,3,-1,-1,6,-1,-1,-1],"right":[8,5,4,-1,-1,7,-1,-1,-1],"value":[3.1803329249318933e-15,-0.1045817174574347,0.052441889585549815,1.947285822106687,-2.0965884241274457,-27.583712949979727,-29.274485643030147,-25.892940256929307,36.81276454501824]},{"feature":[4,0,-2,-2,4,9,-2,-2,0,-2,-2],"threshold":[-2.169449210166931,0.47773319482803345,-2.0,-2.0,-1.4485729932785034,0.23863083869218826,-2.0,-2.0,-1.9168265461921692,-2.0,-2.0],"left":[1,2,-1,-1,5,6,-1,-1,9,-1,-1],"right":[4,3,-1,-1,8,7,-1,-1,10,-1,-1],"value":[7.206070804592517e-15,-25.755851796990676,-34.78990590568732,-16.721797688294032,0.14675699029625017,8.564305737056651,5.812363424764953,63.603151982890594,-0.38890520267941164,15.140240503600248,-0.8243018112666918]}],"feature_names":["age","sex","bmi","bp","s1","s2","s3","s4","s5","s6"],"feature_ranges":[{"name":"age","label":"Age","unit":"years","step":1,"decimals":0,"min":19.0,"max":79.0,"mean":48.51809954751131,"combined_scale":0.07851015683752477,"combined_offset":-3.8403254337494075},{"name":"sex","label":"Sex","unit":"","step":1,"decimals":0,"min":1.0,"max":2.0,"mean":1.4683257918552035,"combined_scale":2.0035484917654918,"combined_offset":-2.94572710262405},{"name":"bmi","label":"Body mass index","unit":"kg/m\u00b2","step":0.1,"decimals":1,"min":18.0,"max":42.2,"mean":26.37579185520362,"combined_scale":0.2283100295133835,"combined_offset":-6.058623800188725},{"name":"bp","label":"Average blood pressure","unit":"mmHg","step":1,"decimals":0,"min":62.0,"max":133.0,"mean":94.64701357466062,"combined_scale":0.07113326086655651,"combined_offset":-6.756918223116098},{"name":"s1","label":"Total cholesterol (tc)","unit":"mg/dL","step":1,"decimals":0,"min":97.0,"max":301.0,"mean":189.14027149321268,"combined_scale":0.028835044712587823,"combined_offset":-5.442226682525355},{"name":"s2","label":"LDL cholesterol","unit":"mg/dL","step":1,"decimals":0,"min":41.6,"max":242.4,"mean":115.43914027149322,"combined_scale":0.03291885696520284,"combined_offset":-3.783178654451666},{"name":"s3","label":"HDL cholesterol","unit":"mg/dL","step":1,"decimals":0,"min":22.0,"max":99.0,"mean":49.78846153846154,"combined_scale":0.07837110019351258,"combined_offset":-3.880923560715856},{"name":"s4","label":"Total cholesterol / HDL ratio","unit":"ratio","step":0.1,"decimals":1,"min":2.0,"max":9.09,"mean":4.070248868778281,"combined_scale":0.7732480603082186,"combined_offset":-3.1552025667647485},{"name":"s5","label":"Triglyceride marker (ltg)","unit":"log scale","step":0.01,"decimals":2,"min":3.2581,"max":6.107,"mean":4.641410859728507,"combined_scale":1.9086086805145166,"combined_offset":-8.8840986886955},{"name":"s6","label":"Blood sugar level","unit":"mg/dL","step":1,"decimals":0,"min":58.0,"max":124.0,"mean":91.26018099547511,"combined_scale":0.08573708563141699,"combined_offset":-7.863523751849165}],"examples":[{"features":[61.0,1.0,25.8,90.0,280.0,195.4,55.0,5.0,4.9972,90.0],"actual":219.0,"predicted":159.33182869083694},{"features":[74.0,1.0,29.8,101.0,171.0,104.8,50.0,3.0,4.3944,86.0],"actual":70.0,"predicted":192.3181564974656},{"features":[66.0,2.0,26.0,91.0,264.0,146.6,65.0,4.0,5.5683,87.0],"actual":202.0,"predicted":170.4485707124824},{"features":[75.0,1.0,31.2,117.67,229.0,138.8,29.0,7.9,5.7236,106.0],"actual":230.0,"predicted":290.57606798486347},{"features":[52.0,2.0,24.5,94.0,217.0,149.4,48.0,5.0,4.585,89.0],"actual":111.0,"predicted":121.71002916620726},{"features":[51.0,1.0,24.1,87.0,261.0,175.6,69.0,4.0,4.4067,93.0],"actual":84.0,"predicted":114.50784051417389},{"features":[46.0,2.0,42.2,99.0,211.0,137.0,44.0,5.0,5.0106,99.0],"actual":242.0,"predicted":235.35839536139153},{"features":[42.0,2.0,30.6,101.0,269.0,172.2,50.0,5.0,5.4553,106.0],"actual":272.0,"predicted":210.3714558014749},{"features":[23.0,2.0,18.0,78.0,171.0,96.0,48.0,4.0,4.9053,92.0],"actual":94.0,"predicted":148.62618159370658},{"features":[32.0,2.0,27.8,89.0,216.0,146.2,55.0,4.0,4.3041,91.0],"actual":96.0,"predicted":161.52984706374224},{"features":[37.0,1.0,23.3,88.0,223.0,142.0,65.0,3.4,4.3567,82.0],"actual":94.0,"predicted":99.8805407878075},{"features":[50.0,1.0,21.0,88.0,140.0,71.8,35.0,4.0,5.112,71.0],"actual":252.0,"predicted":189.7597134390538},{"features":[24.0,1.0,20.7,87.0,149.0,80.6,61.0,2.0,3.6109,78.0],"actual":99.0,"predicted":97.45358670702852},{"features":[54.0,2.0,27.7,113.0,200.0,128.4,37.0,5.0,5.1533,113.0],"actual":297.0,"predicted":240.4760002093187},{"features":[45.0,2.0,21.2,94.0,169.0,96.8,55.0,3.0,4.4543,102.0],"actual":135.0,"predicted":124.0260600974335},{"features":[39.0,2.0,26.9,93.0,136.0,75.4,48.0,3.0,4.1431,99.0],"actual":67.0,"predicted":118.96400858689701},{"features":[60.0,2.0,33.0,97.0,217.0,125.6,45.0,5.0,5.4467,112.0],"actual":295.0,"predicted":228.7200031961125},{"features":[66.0,2.0,34.6,115.0,204.0,139.4,36.0,6.0,4.9628,109.0],"actual":264.0,"predicted":251.01956106717802},{"features":[40.0,2.0,29.0,115.0,97.0,47.2,35.0,2.77,4.3041,95.0],"actual":170.0,"predicted":184.05304061210614},{"features":[62.0,2.0,31.8,115.0,199.0,128.6,44.0,5.0,4.8828,98.0],"actual":275.0,"predicted":234.37721409271876}],"target_description":"Quantitative measure of diabetes progression one year after baseline","y_min":25.0,"y_max":346.0,"all_versions":[{"version":"v1","model_type":"linear","rmse":53.85344583676594,"r2":0.45260276297191915,"is_champion":false},{"version":"v2","model_type":"ridge","rmse":53.777454065343896,"r2":0.45414652070698225,"is_champion":false},{"version":"v3","model_type":"random_forest","rmse":53.49780591256025,"r2":0.45980874589723,"is_champion":false},{"version":"v4","model_type":"gradient_boosting","rmse":53.046531777702995,"r2":0.46888374149896506,"is_champion":true},{"version":"v5","model_type":"xgboost","rmse":54.42450114109846,"r2":0.4409321467081897,"is_champion":false}],"n_train":353,"n_test":89}</script>
+<script>
+(function(){
+  const DATA = JSON.parse(document.getElementById('payload-data').textContent);
+
+  // ---------- theme toggle (light / system / dark) ----------
+  (function(){
+    const root = document.documentElement;
+    const btns = document.querySelectorAll('#themeToggle button');
+    let saved = 'system';
+    try { saved = localStorage.getItem('progestimator-theme') || 'system'; } catch(e){}
+    function apply(choice){
+      if (choice === 'light') root.setAttribute('data-theme','light');
+      else if (choice === 'dark') root.setAttribute('data-theme','dark');
+      else root.removeAttribute('data-theme');
+      btns.forEach(b => b.classList.toggle('active', b.dataset.themeChoice === choice));
+    }
+    apply(saved);
+    btns.forEach(b => b.addEventListener('click', () => {
+      const choice = b.dataset.themeChoice;
+      apply(choice);
+      try { localStorage.setItem('progestimator-theme', choice); } catch(e){}
+    }));
+  })();
+
+  // Which versions the regression-detection suite would flag against the
+  // version immediately before them — computed once, shown in both the
+  // header trend and the version-history list below.
+  const versionFlags = (DATA.all_versions || []).map((v, i, arr) => {
+    const prev = arr[i-1];
+    return !!(prev && (v.r2 < prev.r2 - 0.02 || (v.rmse - prev.rmse) / prev.rmse > 0.05));
+  });
+
+  // ---------- exact GBM inference (mirrors src/train.py + sklearn) ----------
+  // Each feature's raw clinical value converts to the model's internal input
+  // with one multiply-add (combined_scale/combined_offset were derived in
+  // src/export_demo.py by folding sklearn's own dataset normalization
+  // together with our StandardScaler into a single affine transform).
+  function froundArr(row){ return row.map(v => Math.fround(v)); }
+  function toModelInput(rawRow){
+    return rawRow.map((v,i) => v * DATA.feature_ranges[i].combined_scale + DATA.feature_ranges[i].combined_offset);
+  }
+  function predictRaw(rawRow){
+    const x = froundArr(toModelInput(rawRow));
+    let total = DATA.init_value;
+    for (const tr of DATA.trees){
+      let node = 0;
+      while (tr.left[node] !== -1){
+        const f = tr.feature[node];
+        const thr = tr.threshold[node];
+        node = (x[f] <= thr) ? tr.left[node] : tr.right[node];
+      }
+      total += DATA.learning_rate * tr.value[node];
+    }
+    return total;
+  }
+
+  // ---------- state ----------
+  const state = { raw: DATA.feature_ranges.map(f => f.mean), activeExample: null, lastY: null };
+  const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function animateNumber(el, from, to, decimals, duration){
+    if (from === null || !isFinite(from) || prefersReducedMotion){ el.textContent = to.toFixed(decimals); return; }
+    const start = performance.now();
+    function step(now){
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = (from + (to - from) * eased).toFixed(decimals);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // ---------- header chips ----------
+  const modelLabel = DATA.model_type.replace(/_/g,' ');
+  document.getElementById('modelNameLede').textContent = `${DATA.champion_version} (${modelLabel})`;
+  document.title = 'Progression Estimator';
+  const headerChips = document.getElementById('headerChips');
+  headerChips.innerHTML = `
+    <span class="chip accent"><span class="dot"></span>Champion <b>${DATA.champion_version}</b></span>
+    <span class="chip">Algorithm <b>${modelLabel}</b></span>
+    <span class="chip">Trees <b>${DATA.trees.length}</b></span>
+    <span class="chip">Test R&sup2; <b>${DATA.metrics.r2.toFixed(3)}</b></span>
+  `;
+  document.getElementById('dataHashSub').textContent = `${DATA.n_train}+${DATA.n_test} samples`;
+
+  // ---------- header sparkline: RMSE across model versions ----------
+  (function(){
+    const svg = document.getElementById('headerSparkSvg');
+    const versions = DATA.all_versions || [];
+    if (!svg || versions.length < 2) { if (svg) svg.closest('.header-spark').hidden = true; return; }
+    const w = 128, h = 34, padX = 3, padY = 7;
+    const vals = versions.map(v => v.rmse);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const span = (max - min) || 1;
+    const pts = vals.map((v, i) => [
+      padX + (i / (versions.length - 1)) * (w - padX * 2),
+      padY + (1 - (v - min) / span) * (h - padY * 2),
+    ]);
+    const linePath = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const ns = 'http://www.w3.org/2000/svg';
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', linePath);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'var(--border-strong)');
+    path.setAttribute('stroke-width', '1.25');
+    svg.appendChild(path);
+    pts.forEach((p, i) => {
+      const v = versions[i];
+      const color = v.is_champion ? 'var(--accent)' : (versionFlags[i] ? 'var(--warn)' : 'var(--muted-2)');
+      const c = document.createElementNS(ns, 'circle');
+      c.setAttribute('cx', p[0].toFixed(1)); c.setAttribute('cy', p[1].toFixed(1));
+      c.setAttribute('r', v.is_champion ? '3' : '2');
+      c.setAttribute('fill', color);
+      const title = document.createElementNS(ns, 'title');
+      title.textContent = `${v.version} — RMSE ${v.rmse.toFixed(1)}${v.is_champion ? ' (champion)' : versionFlags[i] ? ' (flagged)' : ''}`;
+      c.appendChild(title);
+      svg.appendChild(c);
+    });
+  })();
+
+  // ---------- clinical reference ranges (adult general-population guidelines) ----------
+  // These are display/interpretation metadata only -- they never touch the
+  // model math above. Sourced from standard adult screening guidelines
+  // (WHO BMI categories, AHA blood pressure categories, ATP III lipid
+  // panels, ADA fasting glucose). Display ranges are widened, where needed,
+  // to a superset of {clinical guideline range, this dataset's real patient
+  // range} so no real patient's value is ever clipped off the slider.
+  const CLINICAL = {
+    bmi: {
+      label: 'Body mass index', unit: 'kg/m²', decimals: 1, displayMin: 15, displayMax: 42.2,
+      zones: [
+        { to: 18.5, color: 'amber', label: 'Underweight' },
+        { to: 25,   color: 'green', label: 'Healthy' },
+        { to: 30,   color: 'amber', label: 'Overweight' },
+        { to: Infinity, color: 'red', label: 'Obese' },
+      ],
+    },
+    bp: {
+      label: 'Blood pressure', unit: 'mmHg', decimals: 0, displayMin: 62, displayMax: 180,
+      zones: [
+        { to: 90,  color: 'amber', label: 'Low' },
+        { to: 120, color: 'green', label: 'Normal' },
+        { to: 130, color: 'amber', label: 'Elevated' },
+        { to: Infinity, color: 'red', label: 'High' },
+      ],
+      valueSuffix: ' systolic',
+      note: 'Single reading only — the source study records one "average blood pressure" value per patient, so diastolic pressure is not available. Shown against systolic reference bands; a complete reading needs both numbers.',
+    },
+    s1: {
+      label: 'Total cholesterol', unit: 'mg/dL', decimals: 0, displayMin: 97, displayMax: 301,
+      zones: [
+        { to: 200, color: 'green', label: 'Desirable' },
+        { to: 240, color: 'amber', label: 'Borderline high' },
+        { to: Infinity, color: 'red', label: 'High' },
+      ],
+    },
+    s2: {
+      label: 'LDL cholesterol', unit: 'mg/dL', decimals: 0, displayMin: 40, displayMax: 242.4,
+      zones: [
+        { to: 100, color: 'green', label: 'Optimal' },
+        { to: 130, color: 'green', label: 'Near optimal' },
+        { to: 160, color: 'amber', label: 'Borderline high' },
+        { to: 190, color: 'red',   label: 'High' },
+        { to: Infinity, color: 'red', label: 'Very high' },
+      ],
+      note: 'Targets are risk-dependent — someone with existing cardiovascular disease is often advised toward a lower personal goal than this general-population range implies.',
+    },
+    s3: {
+      label: 'HDL cholesterol', unit: 'mg/dL', decimals: 0, displayMin: 20, displayMax: 100,
+      zones: [
+        { to: 40, color: 'red',   label: 'Low' },
+        { to: 60, color: 'green', label: 'Good' },
+        { to: Infinity, color: 'green', label: 'High (protective)' },
+      ],
+      note: 'Higher is generally more favorable for HDL, unlike the other lipid measurements.',
+    },
+    s4: {
+      label: 'Total cholesterol / HDL ratio', unit: '', decimals: 1, displayMin: 2, displayMax: 9.09,
+      zones: [
+        { to: 3.5, color: 'green', label: 'Optimal' },
+        { to: 5,   color: 'green', label: 'Within range' },
+        { to: 7,   color: 'amber', label: 'Elevated risk' },
+        { to: Infinity, color: 'red', label: 'High risk' },
+      ],
+    },
+    s6: {
+      label: 'Blood glucose', unit: 'mg/dL', decimals: 0, displayMin: 50, displayMax: 250,
+      zones: [
+        { to: 70,  color: 'red',   label: 'Low' },
+        { to: 100, color: 'green', label: 'Normal range' },
+        { to: 126, color: 'amber', label: 'Elevated' },
+        { to: Infinity, color: 'red', label: 'High' },
+      ],
+      note: 'Fasting status isn’t recorded in the source data. These bands assume a fasting draw (the standard for this range) — treat the zone as a general reference, not a confirmed fasting result.',
+    },
+  };
+  const ZONE_COLOR_VAR = { green: '--zone-green', amber: '--zone-amber', red: '--zone-red' };
+
+  function zoneFor(clin, v){
+    for (const z of clin.zones) if (v <= z.to) return z;
+    return clin.zones[clin.zones.length - 1];
+  }
+  function zoneBoundaries(clin){
+    return clin.zones.slice(0, -1).map(z => z.to);
+  }
+  function buildZoneGradient(clin){
+    const { displayMin: min, displayMax: max } = clin;
+    const stops = [];
+    let last = min;
+    clin.zones.forEach(z => {
+      const to = Math.min(z.to, max);
+      const colorVar = `var(${ZONE_COLOR_VAR[z.color]})`;
+      const p1 = pct(last, min, max), p2 = pct(to, min, max);
+      stops.push(`${colorVar} ${p1}%`, `${colorVar} ${p2}%`);
+      last = to;
+    });
+    return `linear-gradient(to right, ${stops.join(', ')})`;
+  }
+
+  // ---------- shared row-building helpers ----------
+  function fmtVal(v, decimals, unit){ return v.toFixed(decimals) + (unit ? ' ' + unit : ''); }
+  function pct(v,min,max){ return Math.max(0,Math.min(100, ((v-min)/(max-min))*100 )); }
+
+  // "Nice" tick step, so unzoned scales (age) land on round numbers a person
+  // would actually say out loud (age 30/40/50, not age 34.7/49.1).
+  function niceTicks(min, max, targetCount){
+    const span = max - min;
+    const roughStep = span / targetCount;
+    const mag = Math.pow(10, Math.floor(Math.log10(roughStep)));
+    const norm = roughStep / mag;
+    const niceNorm = norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10;
+    const step = niceNorm * mag;
+    const ticks = [];
+    let t = Math.ceil(min / step) * step;
+    for (; t <= max + 1e-9; t += step) ticks.push(Math.round(t * 100) / 100);
+    if (ticks.length < 2){ ticks.length = 0; ticks.push(min, max); }
+    return ticks;
+  }
+
+  const rowRefs = {};
+  const groupDemo = document.getElementById('groupDemo');
+  const groupVitals = document.getElementById('groupVitals');
+  const groupLipids = document.getElementById('groupLipids');
+  const groupMetabolic = document.getElementById('groupMetabolic');
+  const GROUP_OF = { age: groupDemo, sex: groupDemo, bmi: groupVitals, bp: groupVitals,
+                     s1: groupLipids, s2: groupLipids, s3: groupLipids, s4: groupLipids, s5: groupLipids,
+                     s6: groupMetabolic };
+
+  // Realistic opening state: a coherent, generally-healthy example reading
+  // for every clinically-referenced metric (per adult screening guidelines),
+  // rather than this dataset's raw statistical averages -- a population mean
+  // isn't a health target, so it shouldn't be what the tool opens on.
+  const DEFAULT_RAW = { age: 45, sex: null, bmi: 22.2, bp: 95, s1: 189, s2: 115, s3: 50, s4: 4.1, s5: 4.64, s6: 91 };
+
+  DATA.feature_ranges.forEach((f, idx) => {
+    const clin = CLINICAL[f.name];
+    const isSex = f.name === 'sex';
+    const row = document.createElement('div');
+    row.className = 'measure-row' + (isSex ? ' toggle-row' : '');
+
+    const valSpan = document.createElement('span');
+    valSpan.className = 'measure-value mono';
+
+    const head = document.createElement('div');
+    head.className = 'measure-head';
+    head.innerHTML = `<span class="measure-name">${clin ? clin.label : f.label}</span>`;
+    head.appendChild(valSpan);
+    row.appendChild(head);
+
+    // seed the default/opening value
+    if (f.name === 'sex') { state.raw[idx] = f.min; DEFAULT_RAW.sex = f.min; }
+    else if (DEFAULT_RAW[f.name] !== undefined) state.raw[idx] = DEFAULT_RAW[f.name];
+
+    if (isSex){
+      const seg = document.createElement('div');
+      seg.className = 'segtoggle';
+      const bA = document.createElement('button'); bA.textContent = 'Male'; bA.dataset.val = f.min;
+      const bB = document.createElement('button'); bB.textContent = 'Female'; bB.dataset.val = f.max;
+      [bA,bB].forEach(btn => btn.addEventListener('click', () => {
+        state.raw[idx] = parseFloat(btn.dataset.val);
+        [bA,bB].forEach(b=>b.classList.toggle('active', b===btn));
+        state.activeExample = null;
+        recompute();
+      }));
+      seg.appendChild(bA); seg.appendChild(bB);
+      row.appendChild(seg);
+      rowRefs[f.name] = { valSpan, seg, btnA:bA, btnB:bB, f };
+    } else {
+      const min = clin ? clin.displayMin : f.min;
+      const max = clin ? clin.displayMax : f.max;
+      const decimals = clin ? clin.decimals : f.decimals;
+      const unit = clin ? clin.unit : f.unit;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'range-wrap';
+      const track = document.createElement('div');
+      track.className = 'range-track' + (clin ? ' has-zones' : '');
+      let fill = null;
+      if (clin){
+        track.style.background = buildZoneGradient(clin);
+        zoneBoundaries(clin).forEach(b => {
+          const bd = document.createElement('div');
+          bd.className = 'zone-boundary';
+          bd.style.left = pct(b, min, max) + '%';
+          track.appendChild(bd);
+        });
+      } else {
+        fill = document.createElement('div'); fill.className = 'range-fill';
+        track.appendChild(fill);
+      }
+      const input = document.createElement('input');
+      input.type = 'range'; input.className = 'range-input';
+      input.min = min; input.max = max; input.step = f.step;
+      input.value = state.raw[idx];
+      input.setAttribute('aria-label', clin ? clin.label : f.label);
+      input.addEventListener('input', () => {
+        state.raw[idx] = parseFloat(input.value);
+        state.activeExample = null;
+        recompute();
+      });
+      wrap.appendChild(track); wrap.appendChild(input);
+      row.appendChild(wrap);
+
+      const tickRow = document.createElement('div');
+      tickRow.className = 'range-ticklabels';
+      const tickValues = clin ? Array.from(new Set([min, ...zoneBoundaries(clin), max])) : niceTicks(min, max, 4);
+      tickValues.forEach(tv => {
+        const s = document.createElement('span');
+        s.style.left = pct(tv, min, max) + '%';
+        s.textContent = decimals === 0 ? Math.round(tv) : tv.toFixed(decimals);
+        tickRow.appendChild(s);
+      });
+      row.appendChild(tickRow);
+
+      if (clin && clin.note){
+        const note = document.createElement('p');
+        note.className = 'metric-note';
+        note.innerHTML = `<span class="aside">${clin.note}</span>`;
+        row.appendChild(note);
+      }
+      if (f.name === 's5'){
+        const note = document.createElement('p');
+        note.className = 'metric-note';
+        note.innerHTML = `<span class="aside">Recorded on a logarithmic scale in the source study ("possibly log of serum triglycerides") — the exact transform isn’t documented, so this is shown as-is rather than converted into an mg/dL clinical reading.</span>`;
+        row.appendChild(note);
+      }
+
+      rowRefs[f.name] = { valSpan, input, fill, min, max, decimals, unit, clin, f };
+    }
+
+    (GROUP_OF[f.name] || groupDemo).appendChild(row);
+  });
+
+  function renderRows(){
+    DATA.feature_ranges.forEach((f, idx) => {
+      const ref = rowRefs[f.name];
+      const v = state.raw[idx];
+      if (f.name === 'sex'){
+        ref.valSpan.innerHTML = `<span class="num">${v === f.min ? 'Male' : 'Female'}</span>`;
+        ref.btnA.classList.toggle('active', v === f.min);
+        ref.btnB.classList.toggle('active', v === f.max);
+        return;
+      }
+      ref.input.value = v;
+      if (ref.clin){
+        const zone = zoneFor(ref.clin, v);
+        const suffix = ref.clin.valueSuffix || '';
+        ref.valSpan.innerHTML = `<span class="num">${fmtVal(v, ref.decimals, ref.unit)}${suffix}</span>` +
+          `<span class="status-pill zone-${zone.color}">${zone.label}</span>`;
+      } else {
+        const p = pct(v, ref.min, ref.max);
+        if (ref.fill) ref.fill.style.width = p + '%';
+        ref.valSpan.innerHTML = `<span class="num">${fmtVal(v, ref.decimals, ref.unit)}</span>`;
+      }
+    });
+  }
+
+  // ---------- estimate panel ----------
+  const predValue = document.getElementById('predValue');
+  const predContext = document.getElementById('predContext');
+  const gaugeFill = document.getElementById('gaugeFill');
+  const gaugeMarker = document.getElementById('gaugeMarker');
+  document.getElementById('gaugeMin').textContent = DATA.y_min.toFixed(0);
+  document.getElementById('gaugeMax').textContent = DATA.y_max.toFixed(0);
+
+  const statGrid = document.getElementById('statGrid');
+  statGrid.innerHTML = `
+    <div class="stat"><div class="k">RMSE</div><div class="v">${DATA.metrics.rmse.toFixed(1)}</div></div>
+    <div class="stat"><div class="k">MAE</div><div class="v">${DATA.metrics.mae.toFixed(1)}</div></div>
+    <div class="stat"><div class="k">R&sup2;</div><div class="v">${DATA.metrics.r2.toFixed(3)}</div></div>
+  `;
+
+  const compareLine = document.getElementById('compareLine');
+  const compareText = document.getElementById('compareText');
+
+  function recompute(){
+    renderRows();
+    const y = predictRaw(state.raw);
+    animateNumber(predValue, state.lastY, y, 1, 260);
+    state.lastY = y;
+    predContext.textContent = DATA.target_description + '.';
+    const p = pct(y, DATA.y_min, DATA.y_max);
+    gaugeFill.style.width = p + '%';
+    gaugeMarker.style.left = p + '%';
+    gaugeMarker.dataset.val = y.toFixed(0);
+
+    if (state.activeExample !== null){
+      const ex = DATA.examples[state.activeExample];
+      compareLine.style.display = 'flex';
+      const diff = y - ex.actual;
+      compareText.innerHTML = `This patient's <b>actual</b> recorded progression was <span class="mono">${ex.actual.toFixed(0)}</span> &mdash; the model's estimate is off by <span class="mono">${Math.abs(diff).toFixed(1)}</span>.`;
+    } else {
+      compareLine.style.display = 'none';
+    }
+  }
+
+  // ---------- example patients ----------
+  const scroller = document.getElementById('exampleScroller');
+  document.getElementById('exampleSub').textContent = `${DATA.examples.length} from the held-out test set`;
+  const chips = DATA.examples.map((ex, i) => {
+    const chip = document.createElement('button');
+    chip.className = 'example-chip';
+    chip.innerHTML = `<span class="id">Patient ${String(i+1).padStart(2,'0')}</span>
+      <span class="vals">act <span class="a">${ex.actual.toFixed(0)}</span></span>
+      <span class="vals">pred <span class="p">${ex.predicted.toFixed(0)}</span></span>`;
+    chip.addEventListener('click', () => {
+      state.raw = ex.features.slice();
+      state.activeExample = i;
+      chips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      recompute();
+    });
+    scroller.appendChild(chip);
+    return chip;
+  });
+
+  // ---------- version history ----------
+  const versionList = document.getElementById('versionList');
+  const rmseMax = Math.max(...DATA.all_versions.map(v => v.rmse));
+  let flaggedLabel = '';
+  DATA.all_versions.forEach((v, i) => {
+    const isFlagged = versionFlags[i];
+    if (isFlagged) flaggedLabel = `${v.version} (${v.model_type.replace(/_/g,' ')})`;
+    const row = document.createElement('div');
+    row.className = 'vrow' + (v.is_champion ? ' champ' : '') + (isFlagged ? ' flagged' : '');
+    const barPct = Math.max(4, (v.rmse / rmseMax) * 100);
+    row.innerHTML = `
+      <span class="vid">${v.version}</span>
+      <span class="vname">${v.model_type.replace(/_/g,' ')}</span>
+      <span class="vbar-wrap"><span class="vbar" style="width:${barPct.toFixed(1)}%"></span></span>
+      <span class="vmetric">RMSE ${v.rmse.toFixed(2)}</span>
+      ${v.is_champion ? '<span class="tag">champion</span>' : (isFlagged ? '<span class="tag">regression</span>' : '<span></span>')}
+    `;
+    versionList.appendChild(row);
+  });
+  document.getElementById('flaggedName').textContent = flaggedLabel || 'a later candidate';
+
+  recompute();
+})();
+</script>
+
+
+</body>
+</html>
