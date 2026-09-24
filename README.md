@@ -1,73 +1,96 @@
 # Progression Estimator
 
-A gradient-boosting regression model that predicts one-year disease progression from routine clinical measurements — served as a single self-contained HTML page that runs inference in the browser, with no backend.
+Predicts a patient's diabetes progression score one year after baseline from ten routine measurements, explains every prediction, and shows the model registry that chose the model. The demo is a single static page that runs the exported model in the browser with no backend.
 
 **Live demo:** https://vishnuvarthant1126-bit.github.io/progression-estimator/
 
-## What it does
-
-You adjust a patient's measurements — demographics, vitals, lipid panel and metabolic markers — and the page returns a predicted one-year progression score in real time, along with where that score falls within the population range of the target variable.
-
-Inputs are grouped and annotated with general adult screening reference ranges and colour-coded by zone (healthy, borderline, higher risk), so the panel reads like a set of lab results rather than a row of anonymous sliders. Values are converted under the hood into the standardised feature space the model was trained on, so the prediction always reflects what is displayed.
-
-## How inference works
-
-The trained ensemble is exported to JSON — every tree's split features, thresholds, child pointers and leaf values — and embedded directly in the page. At runtime the page walks each tree for the current input vector and accumulates the result:
+## What's in the repo
 
 ```
-prediction = init_value + learning_rate * Σ tree_k(x)
+src/progression/
+  data.py       fixed train / holdout split, data fingerprint
+  models.py     six candidate models, trained in order
+  evaluate.py   repeated k-fold CV, holdout metrics, conformal interval
+  gate.py       promotion rules (improvement, parsimony, regression)
+  registry.py   file-based registry: every version kept, champion pointer
+  explain.py    per-feature contributions that sum to the prediction
+  export.py     champion → JSON the page executes
+  train.py      CLI that runs all of the above
+registry/registry.json   every trained version, metrics and gate decision
+web/template.html        the demo page; the model JSON is injected at build
+web/model.json           exported champion payload
+index.html               built page served by GitHub Pages
+tests/                   26 tests, including Python ↔ JavaScript parity
 ```
 
-There is no API call and no server process. The model that produced the reported metrics is the exact model executing in the browser, which means the page runs offline and deploys as a static file.
+## How a model becomes champion
 
-## Champion model
+1. **One holdout, set aside once.** 89 of the 442 patients are split off with a fixed seed. They are scored for the record but never used to choose, tune or compare models.
+2. **Cross-validation on the rest.** Every candidate is scored by 5-fold cross-validation repeated 3 times on the 353 training patients. Hyperparameter search for gradient boosting runs inside each training fold (nested), so tuning never sees the fold it is scored on.
+3. **Promotion gate** (`gate.py`), applied to each candidate against the current champion:
+   * promote if CV RMSE improves by at least 0.25;
+   * within that tie band, promote if it uses fewer input features (same accuracy, simpler model);
+   * flag as a **regression** if CV RMSE is more than 3% worse or CV R² drops by more than 0.02;
+   * otherwise reject and keep the champion.
 
-| | |
-| --- | --- |
-| Model | Gradient-boosting regressor |
-| Version | v4 (champion) |
-| Learning rate | 0.05 |
-| RMSE | 53.05 |
-| MAE | 43.36 |
-| R² | 0.469 |
-| MAPE | 39.2% |
+## Results
 
-## Model registry and regression testing
+| Version | Model | Inputs used | CV RMSE (± sd) | CV R² | Holdout RMSE | Gate |
+|---|---|---|---|---|---|---|
+| v1 | linear regression | 10 | 54.93 ± 3.09 | 0.493 | 53.85 | promoted |
+| v2 | ridge | 10 | 55.15 ± 3.00 | 0.490 | 53.78 | rejected |
+| v3 | lasso | 7 | 55.15 ± 2.99 | 0.490 | 52.92 | **champion** |
+| v4 | random forest | 10 | 58.61 ± 2.76 | 0.422 | 53.10 | regression |
+| v5 | gradient boosting (default) | 10 | 60.89 ± 3.60 | 0.376 | 54.06 | regression |
+| v6 | gradient boosting (tuned) | 10 | 56.79 ± 2.87 | 0.457 | 51.85 | regression |
 
-Each trained candidate is recorded in a version registry rather than overwriting the one before it. The page surfaces that history directly: every version, the score it achieved, and which one currently holds champion status.
+Champion on the holdout: RMSE 52.92, MAE 42.79, R² 0.471.
 
-Promotion is gated. A regression-detection test suite compares each challenger against the reigning champion and blocks promotion when the challenger degrades on the tracked metrics — one candidate in the version history is flagged for exactly that reason. The point is that "the newest model wins" is never the default; a model has to earn the champion slot.
+**The main finding.** On the single holdout split, tuned gradient boosting looks best (51.85). Across 15 cross-validation folds it is clearly worse than the linear models (56.79 vs 55.15). The earlier version of this project picked gradient boosting from one split; the pipeline now shows that result was split luck. With 353 patients and ten mostly linear signals, a sparse linear model is as accurate as anything tried and far easier to explain. Lasso drops age, LDL and the cholesterol ratio entirely.
 
-## Running it locally
+## Prediction interval
 
-A single static file, no build step and no dependencies:
+The page shows a 90% range around every prediction, built with split conformal prediction from out-of-fold cross-validation residuals: ±95 points. On the untouched holdout it covers 93% of patients. The range is wide on purpose: it is an honest statement of how much one-year progression varies between patients with the same measurements.
 
-```
-python3 -m http.server 8000
-```
+## Explanations
 
-Then open `http://localhost:8000`.
+For the linear champion, each input's contribution is `coef × (value − training mean)`, so the bars start from the average training patient and add up exactly to the prediction. For gradient-boosting models the exporter uses path attribution (Saabas), which has the same additive property. `explain.py` and the page's JavaScript implement the same arithmetic, and the tests check both.
 
-## Deploying
-
-### GitHub Pages
-
-1. Push this repository to GitHub.
-2. Go to Settings → Pages, set Source to `main` and folder to `/ (root)`.
-3. The page is served at `https://<username>.github.io/<repository>/`.
-
-### Vercel
+## Tests
 
 ```
-npx vercel --prod
+pip install -r requirements.lock && pip install -e . --no-deps
+pytest -q                               # 26 tests, under a second
+python -m progression.train --check     # retrains everything, must reproduce the registry exactly
 ```
 
-Or import the repository at vercel.com — no framework preset and no build command are required.
+The suite covers:
 
-## Notes
+* **Export parity.** Exported linear and gradient-boosting models reproduce scikit-learn to 1e-6.
+* **JavaScript parity.** The inference code inside the page runs in Node and must match Python on every holdout patient.
+* **Explanations.** Contributions sum to the prediction.
+* **Leakage and determinism.** The holdout never overlaps training, and every registry version was trained on the same data fingerprint.
+* **Gate rules.** Promotion, parsimony, rejection and regression cases.
+* **Quality floor.** CI fails if a retrain produces a champion with CV RMSE above 57 or R² below 0.45.
+* **Interval calibration.** Holdout coverage must stay at or above 85%.
 
-The fitted estimator is exported tree-by-tree into the JSON payload inside `index.html`. Retraining means re-running the training pipeline and replacing that payload; nothing else in the page needs to change.
+GitHub Actions runs all of it on every push, with pinned library versions so the registry check is exact.
+
+## Retraining
+
+```
+python -m progression.train             # rebuilds registry, web/model.json and index.html
+python -m progression.train --build-only   # re-renders index.html after editing web/template.html
+```
+
+## Data
+
+Efron, Hastie, Johnstone & Tibshirani (2004), *Least Angle Regression*: 442 patients, ten baseline variables, and a quantitative disease-progression measure one year later, loaded through `sklearn.datasets.load_diabetes(scaled=False)` so the inputs are in their original clinical units. The source codes sex as 1 or 2 without documenting which is which, and records serum triglycerides only as a log value, so the page shows both as recorded.
 
 ## Disclaimer
 
-This is a technical demonstration, not a medical device and not clinical decision support. The reference ranges shown are general adult screening guidelines and vary with age, sex, medical history, fasting status and overall cardiovascular risk. Predictions are model output on a research dataset and must not be used to make decisions about any person's health.
+A technical demonstration, not a medical device or clinical decision support. The reference bands on the page are general adult screening guidelines. Predictions come from a research dataset and must not be used to make decisions about anyone's health.
+
+## Licence
+
+Code: MIT (see `LICENSE`). Font: Departure Mono by Helena Zhang, SIL Open Font License 1.1.

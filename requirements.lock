@@ -1,0 +1,6 @@
+# Exact versions the committed registry was produced with.
+# CI installs these so `python -m progression.train --check` is bit-for-bit reproducible.
+numpy==2.4.4
+scipy==1.17.1
+scikit-learn==1.8.0
+pytest>=7

@@ -1,0 +1,342 @@
+{
+ "schema": 2,
+ "champion": {
+  "version": "v3",
+  "name": "lasso",
+  "family": "linear",
+  "description": "Lasso regression; the L1 penalty can drop weak features entirely.",
+  "n_features_used": 7,
+  "cv_rmse": 55.1514,
+  "cv_rmse_std": 2.992,
+  "cv_r2": 0.4897,
+  "holdout_rmse": 52.9196,
+  "holdout_mae": 42.793,
+  "holdout_r2": 0.4714,
+  "interval_halfwidth": 95.0291,
+  "holdout_interval_coverage": 0.9326
+ },
+ "model": {
+  "family": "linear",
+  "intercept": -222.7069434338311,
+  "coef": [
+   0.0,
+   -15.989459085291921,
+   5.978455092249308,
+   1.0699714383410228,
+   -0.1385663254082612,
+   -0.0,
+   -0.8677157857924539,
+   0.0,
+   41.917470343112726,
+   0.1490783454556933
+  ],
+  "center": [
+   48.91501416430595,
+   1.4702549575070822,
+   26.53682719546743,
+   94.98957507082154,
+   188.73654390934846,
+   114.92436260623226,
+   49.51983002832861,
+   4.080453257790369,
+   4.654751274787536,
+   91.71671388101983
+  ]
+ },
+ "features": [
+  {
+   "name": "age",
+   "label": "Age",
+   "unit": "years",
+   "min": 19.0,
+   "max": 79.0,
+   "mean": 48.91501416430595
+  },
+  {
+   "name": "sex",
+   "label": "Sex",
+   "unit": "",
+   "min": 1.0,
+   "max": 2.0,
+   "mean": 1.4702549575070822
+  },
+  {
+   "name": "bmi",
+   "label": "Body mass index",
+   "unit": "kg/m\u00b2",
+   "min": 18.0,
+   "max": 42.2,
+   "mean": 26.53682719546742
+  },
+  {
+   "name": "bp",
+   "label": "Blood pressure",
+   "unit": "mmHg",
+   "min": 62.0,
+   "max": 133.0,
+   "mean": 94.98957507082153
+  },
+  {
+   "name": "s1",
+   "label": "Total cholesterol",
+   "unit": "mg/dL",
+   "min": 97.0,
+   "max": 301.0,
+   "mean": 188.73654390934846
+  },
+  {
+   "name": "s2",
+   "label": "LDL cholesterol",
+   "unit": "mg/dL",
+   "min": 41.6,
+   "max": 242.4,
+   "mean": 114.92436260623228
+  },
+  {
+   "name": "s3",
+   "label": "HDL cholesterol",
+   "unit": "mg/dL",
+   "min": 22.0,
+   "max": 99.0,
+   "mean": 49.51983002832861
+  },
+  {
+   "name": "s4",
+   "label": "Total / HDL ratio",
+   "unit": "",
+   "min": 2.0,
+   "max": 9.09,
+   "mean": 4.080453257790368
+  },
+  {
+   "name": "s5",
+   "label": "Serum triglycerides (log)",
+   "unit": "",
+   "min": 3.2581,
+   "max": 6.107,
+   "mean": 4.654751274787535
+  },
+  {
+   "name": "s6",
+   "label": "Blood glucose",
+   "unit": "mg/dL",
+   "min": 58.0,
+   "max": 124.0,
+   "mean": 91.71671388101983
+  }
+ ],
+ "target": {
+  "description": "Quantitative measure of diabetes progression one year after baseline",
+  "min": 25.0,
+  "max": 346.0
+ },
+ "examples": [
+  {
+   "features": [
+    61.0,
+    1.0,
+    25.8,
+    90.0,
+    280.0,
+    195.4,
+    55.0,
+    5.0,
+    4.9972,
+    90.0
+   ],
+   "actual": 219.0,
+   "predicted": 148.2092628683184
+  },
+  {
+   "features": [
+    24.0,
+    1.0,
+    20.7,
+    87.0,
+    149.0,
+    80.6,
+    61.0,
+    2.0,
+    3.6109,
+    78.0
+   ],
+   "actual": 99.0,
+   "predicted": 67.55599221442583
+  },
+  {
+   "features": [
+    60.0,
+    2.0,
+    27.7,
+    107.0,
+    167.0,
+    114.6,
+    38.0,
+    4.0,
+    4.2767,
+    95.0
+   ],
+   "actual": 118.0,
+   "predicted": 162.72140038476851
+  },
+  {
+   "features": [
+    48.0,
+    2.0,
+    23.3,
+    89.33,
+    212.0,
+    142.8,
+    46.0,
+    4.61,
+    4.7536,
+    98.0
+   ],
+   "actual": 84.0,
+   "predicted": 124.77026837667182
+  },
+  {
+   "features": [
+    50.0,
+    1.0,
+    31.8,
+    82.0,
+    136.0,
+    69.2,
+    55.0,
+    2.0,
+    4.0775,
+    85.0
+   ],
+   "actual": 136.0,
+   "predicted": 156.17688357203642
+  },
+  {
+   "features": [
+    32.0,
+    2.0,
+    31.4,
+    89.0,
+    153.0,
+    84.2,
+    56.0,
+    3.0,
+    4.1589,
+    90.0
+   ],
+   "actual": 187.0,
+   "predicted": 146.21997301370686
+  },
+  {
+   "features": [
+    51.0,
+    2.0,
+    22.7,
+    103.0,
+    217.0,
+    162.4,
+    30.0,
+    7.0,
+    4.8122,
+    80.0
+   ],
+   "actual": 91.0,
+   "predicted": 148.7732793729859
+  },
+  {
+   "features": [
+    31.0,
+    1.0,
+    29.7,
+    88.0,
+    167.0,
+    103.4,
+    48.0,
+    4.0,
+    4.3567,
+    78.0
+   ],
+   "actual": 184.0,
+   "predicted": 162.4802202228573
+  }
+ ],
+ "versions": [
+  {
+   "version": "v1",
+   "name": "linear_regression",
+   "family": "linear",
+   "n_features_used": 10,
+   "cv_rmse": 54.9271,
+   "cv_rmse_std": 3.0873,
+   "cv_r2": 0.4934,
+   "holdout_rmse": 53.8534,
+   "status": "promoted",
+   "reason": "First model: becomes the baseline champion."
+  },
+  {
+   "version": "v2",
+   "name": "ridge",
+   "family": "linear",
+   "n_features_used": 10,
+   "cv_rmse": 55.1517,
+   "cv_rmse_std": 3.0032,
+   "cv_r2": 0.4896,
+   "holdout_rmse": 53.7775,
+   "status": "rejected",
+   "reason": "CV RMSE 55.15 vs champion 54.93: gain under 0.25, champion kept."
+  },
+  {
+   "version": "v3",
+   "name": "lasso",
+   "family": "linear",
+   "n_features_used": 7,
+   "cv_rmse": 55.1514,
+   "cv_rmse_std": 2.992,
+   "cv_r2": 0.4897,
+   "holdout_rmse": 52.9196,
+   "status": "champion",
+   "reason": "CV RMSE 55.15 ties champion 54.93 using 7 of 10 features: simpler model wins."
+  },
+  {
+   "version": "v4",
+   "name": "random_forest",
+   "family": "forest",
+   "n_features_used": 10,
+   "cv_rmse": 58.6121,
+   "cv_rmse_std": 2.763,
+   "cv_r2": 0.4217,
+   "holdout_rmse": 53.1045,
+   "status": "regression",
+   "reason": "CV RMSE 58.61 vs champion 55.15 (+6.3%): blocked as a regression."
+  },
+  {
+   "version": "v5",
+   "name": "gradient_boosting_default",
+   "family": "gbm",
+   "n_features_used": 10,
+   "cv_rmse": 60.8926,
+   "cv_rmse_std": 3.6028,
+   "cv_r2": 0.3759,
+   "holdout_rmse": 54.0582,
+   "status": "regression",
+   "reason": "CV RMSE 60.89 vs champion 55.15 (+10.4%): blocked as a regression."
+  },
+  {
+   "version": "v6",
+   "name": "gradient_boosting_tuned",
+   "family": "gbm",
+   "n_features_used": 10,
+   "cv_rmse": 56.7934,
+   "cv_rmse_std": 2.8684,
+   "cv_r2": 0.4573,
+   "holdout_rmse": 51.8526,
+   "status": "regression",
+   "reason": "CV RMSE 56.79 vs champion 55.15 (+3.0%): blocked as a regression."
+  }
+ ],
+ "data": {
+  "n_train": 353,
+  "n_test": 89,
+  "fingerprint": "7a34b5833ae3"
+ }
+}
